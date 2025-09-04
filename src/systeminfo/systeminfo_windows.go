@@ -10,6 +10,7 @@ import (
 
 	"github.com/shirou/gopsutil/v3/winservices"
 	"golang.org/x/sys/windows/registry"
+	"golang.org/x/sys/windows/svc"
 )
 
 func gatherOSVersion(sysInfo *SystemInfo) error {
@@ -95,12 +96,34 @@ func gatherRunningServices(sysInfo *SystemInfo) error {
 	if err != nil {
 		return fmt.Errorf("failed to list services: %v", err)
 	}
-	for _, s := range services {
-		status, err := s.Status()
-		if err != nil {
+	for i := range services {
+		svcInfo := &services[i]
+		if err := svcInfo.GetServiceDetail(); err != nil {
 			continue
 		}
-		sysInfo.RunningServices = append(sysInfo.RunningServices, ServiceInfo{Name: s.Name, Status: status})
+		state := serviceStateToString(svcInfo.Status.State)
+		sysInfo.RunningServices = append(sysInfo.RunningServices, ServiceInfo{Name: svcInfo.Name, Status: state})
 	}
 	return nil
+}
+
+func serviceStateToString(state svc.State) string {
+	switch state {
+	case svc.Stopped:
+		return "Stopped"
+	case svc.StartPending:
+		return "StartPending"
+	case svc.StopPending:
+		return "StopPending"
+	case svc.Running:
+		return "Running"
+	case svc.ContinuePending:
+		return "ContinuePending"
+	case svc.PausePending:
+		return "PausePending"
+	case svc.Paused:
+		return "Paused"
+	default:
+		return fmt.Sprintf("Unknown(%d)", state)
+	}
 }
