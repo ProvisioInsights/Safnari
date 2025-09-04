@@ -24,6 +24,17 @@ make build
 
 The compiled binary will be located in the `bin` directory.
 
+To include runtime tracing for debugging and performance analysis, build with
+the `trace` tag:
+
+```sh
+cd src
+go build -tags trace -o ../bin/safnari-trace ./cmd
+```
+
+Trace-enabled builds record code-level tasks and regions to `trace.out`. Use
+`go tool trace trace.out` to inspect execution timing and behavior.
+
 ### Download Pre-Compiled Binary
 
 Check the [releases page](https://github.com/Forgence/Safnari/releases) for binaries for your operating system.
