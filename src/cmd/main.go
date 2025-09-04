@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -14,6 +15,8 @@ import (
 	"safnari/scanner"
 	"safnari/systeminfo"
 	"safnari/tracing"
+	"safnari/update"
+	"safnari/version"
 )
 
 func main() {
@@ -32,6 +35,14 @@ func main() {
 
 	// Initialize logger
 	logger.Init(cfg.LogLevel)
+
+	if latest, notes, newer, err := update.CheckForUpdate(version.Version); err == nil && newer {
+		if strings.Contains(strings.ToLower(notes), "security") {
+			logger.Warnf("Update available: %s -> %s (security fixes included)", version.Version, latest)
+		} else {
+			logger.Infof("Update available: %s -> %s", version.Version, latest)
+		}
+	}
 
 	// Record start time
 	startTime := time.Now()

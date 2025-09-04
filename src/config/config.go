@@ -5,9 +5,12 @@ import (
 	"flag"
 	"fmt"
 	"io/ioutil"
+	"os"
 	"runtime"
 	"strings"
 	"time"
+
+	"safnari/version"
 )
 
 type Config struct {
@@ -73,9 +76,15 @@ func LoadConfig() (*Config, error) {
 	extendedProcessInfo := flag.Bool("extended-process-info", cfg.ExtendedProcessInfo, "Gather extended process information (requires elevated privileges)")
 	sensitiveDataTypes := flag.String("sensitive-data-types", "", "Sensitive data types to scan for (comma-separated)")
 	fuzzyHash := flag.Bool("fuzzy-hash", cfg.FuzzyHash, "Enable fuzzy hashing (ssdeep)")
+	showVersion := flag.Bool("version", false, "Print version and exit")
 
 	flag.Usage = displayHelp
 	flag.Parse()
+
+	if *showVersion {
+		fmt.Printf("Safnari version %s\n", version.Version)
+		os.Exit(0)
+	}
 
 	if *configFile != "" {
 		cfg.ConfigFile = *configFile

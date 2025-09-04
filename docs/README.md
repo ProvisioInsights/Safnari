@@ -34,6 +34,13 @@ cd src
 go build -tags trace -o ../bin/safnari-trace ./cmd
 ```
 
+To embed a version string during compilation, use an `-ldflags` parameter:
+
+```sh
+cd src
+go build -ldflags "-X safnari/version.Version=v1.0.2" -o ../bin/safnari ./cmd
+```
+
 ## Usage
 
 Run the compiled binary with desired flags. Running with `-h` prints all options.
@@ -41,6 +48,10 @@ Run the compiled binary with desired flags. Running with `-h` prints all options
 ```sh
 ./bin/safnari-$(go env GOOS)-$(go env GOARCH) --help
 ```
+
+Use `--version` to display the current version. On startup Safnari checks the latest
+GitHub release and logs a message if a newer version, including any security fixes,
+is available.
 
 ## Configuration
 
