@@ -32,3 +32,27 @@ func TestGatherRunningProcesses(t *testing.T) {
 		t.Fatalf("gather extended: %v", err)
 	}
 }
+
+func TestGatherNetworkInterfaces(t *testing.T) {
+	sys := &SystemInfo{}
+	if err := gatherNetworkInterfaces(sys); err != nil {
+		t.Fatalf("interfaces: %v", err)
+	}
+	if len(sys.NetworkInterfaces) == 0 {
+		t.Fatal("expected at least one interface")
+	}
+}
+
+func TestGatherOpenConnections(t *testing.T) {
+	sys := &SystemInfo{}
+	if err := gatherOpenConnections(sys); err != nil {
+		t.Fatalf("connections: %v", err)
+	}
+}
+
+func TestGatherRunningServices(t *testing.T) {
+	sys := &SystemInfo{}
+	if err := gatherRunningServices(sys); err != nil {
+		t.Fatalf("services: %v", err)
+	}
+}

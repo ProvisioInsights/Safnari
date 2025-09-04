@@ -2,18 +2,23 @@ package systeminfo
 
 import (
 	"fmt"
+	"net"
 	"safnari/config"
 	"safnari/logger"
 
+	gnet "github.com/shirou/gopsutil/v3/net"
 	"github.com/shirou/gopsutil/v3/process"
 )
 
 type SystemInfo struct {
-	OSVersion        string        `json:"os_version"`
-	InstalledPatches []string      `json:"installed_patches"`
-	RunningProcesses []ProcessInfo `json:"running_processes"`
-	StartupPrograms  []string      `json:"startup_programs"`
-	InstalledApps    []string      `json:"installed_apps"`
+	OSVersion         string           `json:"os_version"`
+	InstalledPatches  []string         `json:"installed_patches"`
+	RunningProcesses  []ProcessInfo    `json:"running_processes"`
+	StartupPrograms   []string         `json:"startup_programs"`
+	InstalledApps     []string         `json:"installed_apps"`
+	NetworkInterfaces []InterfaceInfo  `json:"network_interfaces"`
+	OpenConnections   []ConnectionInfo `json:"open_connections"`
+	RunningServices   []ServiceInfo    `json:"running_services"`
 }
 
 type ProcessInfo struct {
@@ -47,6 +52,18 @@ func GetSystemInfo(cfg *config.Config) (*SystemInfo, error) {
 
 	if err := gatherInstalledApps(sysInfo); err != nil {
 		logger.Warnf("Failed to gather installed applications: %v", err)
+	}
+
+	if err := gatherNetworkInterfaces(sysInfo); err != nil {
+		logger.Warnf("Failed to gather network interfaces: %v", err)
+	}
+
+	if err := gatherOpenConnections(sysInfo); err != nil {
+		logger.Warnf("Failed to gather network connections: %v", err)
+	}
+
+	if err := gatherRunningServices(sysInfo); err != nil {
+		logger.Warnf("Failed to gather running services: %v", err)
 	}
 
 	return sysInfo, nil
@@ -98,6 +115,59 @@ func gatherRunningProcesses(sysInfo *SystemInfo, extended bool) error {
 		sysInfo.RunningProcesses = append(sysInfo.RunningProcesses, procInfo)
 	}
 
+	return nil
+}
+
+type InterfaceInfo struct {
+	Name      string   `json:"name"`
+	MAC       string   `json:"mac"`
+	Addresses []string `json:"addresses"`
+}
+
+type ConnectionInfo struct {
+	LocalAddr  string `json:"local_addr"`
+	RemoteAddr string `json:"remote_addr"`
+	Status     string `json:"status"`
+	PID        int32  `json:"pid"`
+}
+
+type ServiceInfo struct {
+	Name   string `json:"name"`
+	Status string `json:"status"`
+}
+
+func gatherNetworkInterfaces(sysInfo *SystemInfo) error {
+	ifaces, err := net.Interfaces()
+	if err != nil {
+		return fmt.Errorf("failed to get network interfaces: %v", err)
+	}
+	for _, iface := range ifaces {
+		info := InterfaceInfo{Name: iface.Name, MAC: iface.HardwareAddr.String()}
+		addrs, err := iface.Addrs()
+		if err == nil {
+			for _, addr := range addrs {
+				info.Addresses = append(info.Addresses, addr.String())
+			}
+		}
+		sysInfo.NetworkInterfaces = append(sysInfo.NetworkInterfaces, info)
+	}
+	return nil
+}
+
+func gatherOpenConnections(sysInfo *SystemInfo) error {
+	conns, err := gnet.Connections("all")
+	if err != nil {
+		return nil
+	}
+	for _, c := range conns {
+		connInfo := ConnectionInfo{
+			LocalAddr:  fmt.Sprintf("%s:%d", c.Laddr.IP, c.Laddr.Port),
+			RemoteAddr: fmt.Sprintf("%s:%d", c.Raddr.IP, c.Raddr.Port),
+			Status:     c.Status,
+			PID:        c.Pid,
+		}
+		sysInfo.OpenConnections = append(sysInfo.OpenConnections, connInfo)
+	}
 	return nil
 }
 

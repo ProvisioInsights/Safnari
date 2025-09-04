@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"strings"
 
+	"github.com/shirou/gopsutil/v3/winservices"
 	"golang.org/x/sys/windows/registry"
 )
 
@@ -85,6 +86,21 @@ func gatherInstalledApps(sysInfo *SystemInfo) error {
 			}
 			appKey.Close()
 		}
+	}
+	return nil
+}
+
+func gatherRunningServices(sysInfo *SystemInfo) error {
+	services, err := winservices.ListServices()
+	if err != nil {
+		return fmt.Errorf("failed to list services: %v", err)
+	}
+	for _, s := range services {
+		status, err := s.Status()
+		if err != nil {
+			continue
+		}
+		sysInfo.RunningServices = append(sysInfo.RunningServices, ServiceInfo{Name: s.Name, Status: status})
 	}
 	return nil
 }

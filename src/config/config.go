@@ -30,6 +30,7 @@ type Config struct {
 	ConfigFile          string   `json:"config_file"`
 	ExtendedProcessInfo bool     `json:"extended_process_info"`
 	SensitiveDataTypes  []string `json:"sensitive_data_types"`
+	FuzzyHash           bool     `json:"fuzzy_hash"`
 }
 
 func LoadConfig() (*Config, error) {
@@ -71,6 +72,7 @@ func LoadConfig() (*Config, error) {
 	configFile := flag.String("config", "", "Path to JSON configuration file")
 	extendedProcessInfo := flag.Bool("extended-process-info", cfg.ExtendedProcessInfo, "Gather extended process information (requires elevated privileges)")
 	sensitiveDataTypes := flag.String("sensitive-data-types", "", "Sensitive data types to scan for (comma-separated)")
+	fuzzyHash := flag.Bool("fuzzy-hash", cfg.FuzzyHash, "Enable fuzzy hashing (ssdeep)")
 
 	flag.Usage = displayHelp
 	flag.Parse()
@@ -120,8 +122,23 @@ func LoadConfig() (*Config, error) {
 			cfg.ExtendedProcessInfo = *extendedProcessInfo
 		case "sensitive-data-types":
 			cfg.SensitiveDataTypes = parseCommaSeparated(*sensitiveDataTypes)
+		case "fuzzy-hash":
+			cfg.FuzzyHash = *fuzzyHash
 		}
 	})
+
+	if cfg.FuzzyHash {
+		found := false
+		for _, algo := range cfg.HashAlgorithms {
+			if algo == "ssdeep" {
+				found = true
+				break
+			}
+		}
+		if !found {
+			cfg.HashAlgorithms = append(cfg.HashAlgorithms, "ssdeep")
+		}
+	}
 
 	if err := cfg.validate(); err != nil {
 		return nil, err
