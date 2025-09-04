@@ -24,6 +24,22 @@ make build
 
 The compiled binary will be located in the `bin` directory.
 
+To cross-compile for other platforms, set `GOOS` and `GOARCH`:
+
+```sh
+# macOS Apple Silicon
+GOOS=darwin GOARCH=arm64 make build
+
+# Linux ARM64
+GOOS=linux GOARCH=arm64 make build
+```
+
+You can build binaries for all supported targets at once with:
+
+```sh
+make build-all
+```
+
 To include runtime tracing for debugging and performance analysis, build with
 the `trace` tag:
 
