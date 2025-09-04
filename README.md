@@ -24,6 +24,14 @@ make build
 
 The compiled binary will be located in the `bin` directory.
 
+Safnari embeds its version at build time. To set the version string, pass a
+`-ldflags` option:
+
+```sh
+cd src
+go build -ldflags "-X safnari/version.Version=v1.0.2" -o ../bin/safnari ./cmd
+```
+
 To cross-compile for other platforms, set `GOOS` and `GOARCH`:
 
 ```sh
@@ -71,6 +79,10 @@ This will scan `/home/user`, compute SHA-256 hashes, search for the term
 `password`, and write results to a file such as
 `safnari-20240130-150405-1706625005.json` unless an alternate output filename
 is provided.
+
+Use `--version` to print the embedded version. On startup Safnari checks the
+latest GitHub release and logs a message if an update, including any noted
+security fixes, is available.
 
 ## Documentation
 
