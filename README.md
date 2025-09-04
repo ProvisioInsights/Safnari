@@ -30,13 +30,20 @@ Check the [releases page](https://github.com/Forgence/Safnari/releases) for bina
 
 ## Usage
 
-Run the binary with `--help` to see all available options. Example:
+Run the binary with `-h` to see all available options. By default Safnari scans
+the current working directory using a concurrency level equal to the number of
+logical CPUs. It does not search for any strings or sensitive data types unless
+explicitly requested and writes results to a timestamped file named
+`safnari-<human-readable>-<unix>.json`.
 
 ```sh
 ./bin/safnari-$(go env GOOS)-$(go env GOARCH) --path /home/user --hashes sha256 --search "password"
 ```
 
-This will scan `/home/user`, compute SHA-256 hashes, search for the term "password," and write results to `output.json` by default.
+This will scan `/home/user`, compute SHA-256 hashes, search for the term
+`password`, and write results to a file such as
+`safnari-20240130-150405-1706625005.json` unless an alternate output filename
+is provided.
 
 ## Contributing
 

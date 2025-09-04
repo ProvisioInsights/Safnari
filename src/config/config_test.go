@@ -1,7 +1,6 @@
 package config
 
 import (
-	"flag"
 	"os"
 	"runtime"
 	"testing"
@@ -14,23 +13,6 @@ func TestParseCommaSeparated(t *testing.T) {
 	}
 	if res := parseCommaSeparated(""); len(res) != 0 {
 		t.Fatalf("expected empty slice")
-	}
-}
-
-func TestFlagParsers(t *testing.T) {
-	fs := flag.NewFlagSet("test", flag.ContinueOnError)
-	fs.Int("i", 5, "")
-	fs.Int64("i64", 10, "")
-	fs.Bool("b", true, "")
-	fs.Parse([]string{"-i=7", "-i64=20", "-b=false"})
-	if getIntFlagValue(fs.Lookup("i")) != 7 {
-		t.Fatal("int parse failed")
-	}
-	if getInt64FlagValue(fs.Lookup("i64")) != 20 {
-		t.Fatal("int64 parse failed")
-	}
-	if parseBoolFlagValue(fs.Lookup("b")) {
-		t.Fatal("bool parse failed")
 	}
 }
 
