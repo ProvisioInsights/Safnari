@@ -17,7 +17,7 @@ import (
 	"golang.org/x/time/rate"
 )
 
-func ScanFiles(ctx context.Context, cfg *config.Config, metrics *output.Metrics) error {
+func ScanFiles(ctx context.Context, cfg *config.Config, metrics *output.Metrics, w *output.Writer) error {
 	// If cfg.AllDrives is true, get all local drives
 	if cfg.AllDrives {
 		drives, err := utils.GetLocalDrives()
@@ -104,9 +104,8 @@ func ScanFiles(ctx context.Context, cfg *config.Config, metrics *output.Metrics)
 				default:
 					// Continue processing
 				}
-				ProcessFile(ctx, filePath, cfg, sensitivePatterns)
+				ProcessFile(ctx, filePath, cfg, w, sensitivePatterns)
 				bar.Add(1)
-				metrics.FilesProcessed++
 			}
 		}()
 	}

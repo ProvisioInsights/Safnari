@@ -110,14 +110,15 @@ func TestProcessFile(t *testing.T) {
 	cfg := &config.Config{HashAlgorithms: []string{"md5"}, MaxFileSize: 1024, OutputFileName: outFile.Name()}
 	sys := &systeminfo.SystemInfo{RunningProcesses: []systeminfo.ProcessInfo{}}
 	metrics := &output.Metrics{}
-	if err := output.Init(cfg, sys, metrics); err != nil {
+	w, err := output.New(cfg, sys, metrics)
+	if err != nil {
 		t.Fatalf("output init: %v", err)
 	}
-	defer output.Close()
+	defer w.Close()
 
 	patterns := GetPatterns([]string{"email"})
 	ctx := context.Background()
-	ProcessFile(ctx, tmp.Name(), cfg, patterns)
+	ProcessFile(ctx, tmp.Name(), cfg, w, patterns)
 }
 
 func TestCountTotalFiles(t *testing.T) {
