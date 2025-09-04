@@ -56,6 +56,10 @@ This will scan `/home/user`, compute SHA-256 hashes, search for the term
 `safnari-20240130-150405-1706625005.json` unless an alternate output filename
 is provided.
 
+## Documentation
+
+See the [docs](docs/README.md) directory for extended guides and additional examples.
+
 ## Contributing
 
 Contributions to Safnari are always welcome! Feel free to open issues or submit pull requests to help improve the project.
