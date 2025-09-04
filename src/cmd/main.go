@@ -19,8 +19,9 @@ import (
 func main() {
 	if err := tracing.Start(); err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to start trace: %v\n", err)
+	} else {
+		defer tracing.Stop()
 	}
-	defer tracing.Stop()
 
 	// Initialize configuration
 	cfg, err := config.LoadConfig()
