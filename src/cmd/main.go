@@ -41,11 +41,11 @@ func main() {
 	}
 
 	// Prepare output
-	err = output.Init(cfg, sysInfo, &metrics)
+	writer, err := output.New(cfg, sysInfo, &metrics)
 	if err != nil {
 		logger.Fatalf("Failed to initialize output: %v", err)
 	}
-	defer output.Close()
+	defer writer.Close()
 
 	// Handle graceful shutdown
 	ctx, cancel := context.WithCancel(context.Background())
@@ -53,10 +53,10 @@ func main() {
 		cancel()
 	}()
 
-	go handleSignals(cancel, &metrics)
+	go handleSignals(cancel, &metrics, writer)
 
 	// Start scanning
-	err = scanner.ScanFiles(ctx, cfg, &metrics)
+	err = scanner.ScanFiles(ctx, cfg, &metrics, writer)
 	if err != nil {
 		logger.Fatalf("Scanning failed: %v", err)
 	}
@@ -65,12 +65,12 @@ func main() {
 	metrics.EndTime = time.Now().Format(time.RFC3339)
 
 	// Update output with final metrics
-	output.SetMetrics(metrics)
+	writer.SetMetrics(metrics)
 
 	logger.Info("Scanning completed successfully.")
 }
 
-func handleSignals(cancelFunc context.CancelFunc, metrics *output.Metrics) {
+func handleSignals(cancelFunc context.CancelFunc, metrics *output.Metrics, w *output.Writer) {
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
 	<-sigChan
@@ -78,7 +78,7 @@ func handleSignals(cancelFunc context.CancelFunc, metrics *output.Metrics) {
 
 	// Record end time upon interruption
 	metrics.EndTime = time.Now().Format(time.RFC3339)
-	output.SetMetrics(*metrics)
+	w.SetMetrics(*metrics)
 
 	cancelFunc()
 }

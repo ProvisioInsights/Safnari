@@ -2,6 +2,9 @@ package output
 
 import (
 	"os"
+	"strconv"
+	"strings"
+	"sync"
 	"testing"
 
 	"safnari/config"
@@ -18,25 +21,75 @@ func TestOutputLifecycle(t *testing.T) {
 	cfg := &config.Config{OutputFileName: tmp.Name()}
 	sysInfo := &systeminfo.SystemInfo{RunningProcesses: []systeminfo.ProcessInfo{}}
 	metrics := &Metrics{}
-	if err := Init(cfg, sysInfo, metrics); err != nil {
+	w, err := New(cfg, sysInfo, metrics)
+	if err != nil {
 		t.Fatalf("init: %v", err)
 	}
-	defer Close()
 
-	WriteData(map[string]interface{}{"path": "test"})
-	SetMetrics(Metrics{})
+	w.WriteData(map[string]interface{}{"path": "test"})
+	w.SetMetrics(Metrics{})
+	w.Close()
 }
 
-func TestJSONWriterFlush(t *testing.T) {
-	tmp, err := os.CreateTemp("", "flush*.json")
+func TestWriteDataStreaming(t *testing.T) {
+	tmp, err := os.CreateTemp("", "stream*.json")
 	if err != nil {
 		t.Fatalf("temp file: %v", err)
 	}
 	defer os.Remove(tmp.Name())
 
-	w := NewJSONWriter(tmp)
-	w.data.Files = append(w.data.Files, map[string]interface{}{"a": 1})
-	if err := w.Flush(); err != nil {
-		t.Fatalf("flush: %v", err)
+	cfg := &config.Config{OutputFileName: tmp.Name()}
+	sysInfo := &systeminfo.SystemInfo{RunningProcesses: []systeminfo.ProcessInfo{}}
+	w, err := New(cfg, sysInfo, &Metrics{})
+	if err != nil {
+		t.Fatalf("init: %v", err)
+	}
+
+	w.WriteData(map[string]interface{}{"path": "early"})
+
+	content, err := os.ReadFile(tmp.Name())
+	if err != nil {
+		t.Fatalf("read file: %v", err)
+	}
+	if !strings.Contains(string(content), "\"path\": \"early\"") {
+		t.Fatalf("expected written data, got: %s", string(content))
+	}
+
+	w.Close()
+}
+
+func TestWriteDataConcurrent(t *testing.T) {
+	tmp, err := os.CreateTemp("", "concurrent*.json")
+	if err != nil {
+		t.Fatalf("temp file: %v", err)
+	}
+	defer os.Remove(tmp.Name())
+
+	cfg := &config.Config{OutputFileName: tmp.Name()}
+	sysInfo := &systeminfo.SystemInfo{RunningProcesses: []systeminfo.ProcessInfo{}}
+	w, err := New(cfg, sysInfo, &Metrics{})
+	if err != nil {
+		t.Fatalf("init: %v", err)
+	}
+
+	var wg sync.WaitGroup
+	for i := 0; i < 5; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			w.WriteData(map[string]interface{}{"path": i})
+		}(i)
+	}
+	wg.Wait()
+	w.Close()
+
+	content, err := os.ReadFile(tmp.Name())
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	for i := 0; i < 5; i++ {
+		if !strings.Contains(string(content), "\"path\": "+strconv.Itoa(i)) {
+			t.Fatalf("missing entry %d", i)
+		}
 	}
 }

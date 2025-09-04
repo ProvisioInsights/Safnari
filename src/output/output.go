@@ -9,14 +9,6 @@ import (
 	"safnari/systeminfo"
 )
 
-var (
-	outputFile   *os.File
-	outputWriter *JSONWriter
-	cfg          *config.Config
-	mu           sync.Mutex
-	currentSize  int64
-)
-
 type Metrics struct {
 	StartTime      string `json:"start_time"`
 	EndTime        string `json:"end_time"`
@@ -25,84 +17,104 @@ type Metrics struct {
 	TotalProcesses int    `json:"total_processes"`
 }
 
-type OutputData struct {
-	SystemInfo *systeminfo.SystemInfo    `json:"system_info,omitempty"`
-	Processes  *[]systeminfo.ProcessInfo `json:"processes,omitempty"`
-	Files      []map[string]interface{}  `json:"files"`
-	Metrics    *Metrics                  `json:"metrics,omitempty"`
-}
-
-type JSONWriter struct {
-	encoder *json.Encoder
+type Writer struct {
 	file    *os.File
-	data    OutputData
+	mu      sync.Mutex
+	first   bool
+	metrics *Metrics
 }
 
-func Init(config *config.Config, sysInfo *systeminfo.SystemInfo, metrics *Metrics) error {
-	cfg = config
-	var err error
-	outputFile, err = os.OpenFile(cfg.OutputFileName, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0600)
+func New(cfg *config.Config, sysInfo *systeminfo.SystemInfo, m *Metrics) (*Writer, error) {
+	f, err := os.OpenFile(cfg.OutputFileName, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0600)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
-	outputWriter = NewJSONWriter(outputFile)
-
-	// Initialize OutputData
-	outputWriter.data.SystemInfo = sysInfo
-	outputWriter.data.Processes = &sysInfo.RunningProcesses
-
-	// Update metrics with total process count
-	if metrics != nil {
-		metrics.TotalProcesses = len(sysInfo.RunningProcesses)
+	w := &Writer{file: f, first: true, metrics: m}
+	if m != nil {
+		m.TotalProcesses = len(sysInfo.RunningProcesses)
 	}
 
-	outputWriter.data.Metrics = metrics
-
-	return nil
-}
-
-func WriteData(data map[string]interface{}) {
-	mu.Lock()
-	defer mu.Unlock()
-
-	outputWriter.data.Files = append(outputWriter.data.Files, data)
-
-	// Update file count metric
-	if outputWriter.data.Metrics != nil {
-		outputWriter.data.Metrics.FilesProcessed++
+	if _, err := w.file.WriteString("{\n"); err != nil {
+		return nil, err
 	}
 
-	// Check for output file size rotation if needed (not implemented in this version)
-}
-
-func SetMetrics(metrics Metrics) {
-	mu.Lock()
-	defer mu.Unlock()
-
-	outputWriter.data.Metrics = &metrics
-}
-
-func Close() {
-	mu.Lock()
-	defer mu.Unlock()
-
-	outputWriter.Flush()
-	outputFile.Close()
-}
-
-func NewJSONWriter(file *os.File) *JSONWriter {
-	encoder := json.NewEncoder(file)
-	encoder.SetIndent("", "  ")
-	return &JSONWriter{
-		encoder: encoder,
-		file:    file,
-		data: OutputData{
-			Files: []map[string]interface{}{},
-		},
+	sysBytes, err := json.MarshalIndent(sysInfo, "  ", "  ")
+	if err != nil {
+		return nil, err
 	}
+	if _, err := w.file.WriteString("  \"system_info\": "); err != nil {
+		return nil, err
+	}
+	if _, err := w.file.Write(sysBytes); err != nil {
+		return nil, err
+	}
+	if _, err := w.file.WriteString(",\n"); err != nil {
+		return nil, err
+	}
+
+	procBytes, err := json.MarshalIndent(sysInfo.RunningProcesses, "  ", "  ")
+	if err != nil {
+		return nil, err
+	}
+	if _, err := w.file.WriteString("  \"processes\": "); err != nil {
+		return nil, err
+	}
+	if _, err := w.file.Write(procBytes); err != nil {
+		return nil, err
+	}
+	if _, err := w.file.WriteString(",\n"); err != nil {
+		return nil, err
+	}
+
+	if _, err := w.file.WriteString("  \"files\": [\n"); err != nil {
+		return nil, err
+	}
+
+	return w, w.file.Sync()
 }
 
-func (w *JSONWriter) Flush() error {
-	return w.encoder.Encode(w.data)
+func (w *Writer) WriteData(data map[string]interface{}) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	if !w.first {
+		w.file.WriteString(",\n")
+	}
+
+	bytes, err := json.MarshalIndent(data, "    ", "  ")
+	if err == nil {
+		w.file.WriteString("    ")
+		w.file.Write(bytes)
+	}
+
+	w.first = false
+	if w.metrics != nil {
+		w.metrics.FilesProcessed++
+	}
+
+	w.file.Sync()
+}
+
+func (w *Writer) SetMetrics(m Metrics) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.metrics = &m
+}
+
+func (w *Writer) Close() {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	w.file.WriteString("\n  ]")
+	if w.metrics != nil {
+		mBytes, err := json.MarshalIndent(w.metrics, "  ", "  ")
+		if err == nil {
+			w.file.WriteString(",\n  \"metrics\": ")
+			w.file.Write(mBytes)
+		}
+	}
+	w.file.WriteString("\n}\n")
+	w.file.Sync()
+	w.file.Close()
 }
