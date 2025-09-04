@@ -1,0 +1,48 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+    tags: ['*']
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v4
+        with:
+          go-version: '1.22'
+      - run: make lint
+      - run: make test
+
+  build:
+    needs: test
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        goos: [linux, darwin, windows]
+        goarch: [amd64]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v4
+        with:
+          go-version: '1.22'
+      - run: GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }} make build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: safnari-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: bin/safnari-${{ matrix.goos }}-${{ matrix.goarch }}*
+
+  release:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: bin
+      - uses: softprops/action-gh-release@v1
+        with:
+          files: bin/**
