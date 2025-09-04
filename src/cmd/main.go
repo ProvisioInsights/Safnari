@@ -13,9 +13,15 @@ import (
 	"safnari/output"
 	"safnari/scanner"
 	"safnari/systeminfo"
+	"safnari/tracing"
 )
 
 func main() {
+	if err := tracing.Start(); err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to start trace: %v\n", err)
+	}
+	defer tracing.Stop()
+
 	// Initialize configuration
 	cfg, err := config.LoadConfig()
 	if err != nil {

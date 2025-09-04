@@ -13,12 +13,17 @@ import (
 	"safnari/logger"
 	"safnari/metadata"
 	"safnari/output"
+	"safnari/tracing"
 
 	"github.com/djherbis/times"
 	"github.com/h2non/filetype"
 )
 
 func ProcessFile(ctx context.Context, path string, cfg *config.Config, w *output.Writer, sensitivePatterns map[string]*regexp.Regexp) {
+	ctx, endTask := tracing.StartTask(ctx, "process_file")
+	tracing.Log(ctx, "file", path)
+	defer endTask()
+
 	select {
 	case <-ctx.Done():
 		return
@@ -40,7 +45,9 @@ func ProcessFile(ctx context.Context, path string, cfg *config.Config, w *output
 		return
 	}
 
+	endRegion := tracing.StartRegion(ctx, "collect_file_data")
 	fileData, err := collectFileData(path, fileInfo, cfg, sensitivePatterns)
+	endRegion()
 	if err != nil {
 		logger.Warnf("Failed to process file %s: %v", path, err)
 		return
