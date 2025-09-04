@@ -1,68 +1,42 @@
 # Safnari: File and System Information Gatherer
 
-Safnari is a versatile and comprehensive tool designed to gather information about files and system information from a host machine. The tool scans the specified directory, collects metadata about the files, and retrieves system information such as host details, running processes, and CPU usage. Safnari provides several command-line flags to configure the scanning process, such as filtering file types, excluding patterns, and calculating file hashes.
+Safnari is a versatile tool for gathering file and system information from a host machine. It scans user-defined paths, collects rich metadata about files, and retrieves system details such as running processes. Safnari supports numerous configuration flags for filtering, hashing, and output control.
 
 ## Features
 
-- Gather host information such as OS details, uptime, and hostname
+- Gather host information such as OS details, installed patches, and hostname
 - List running processes and their details (PID, name, memory usage, etc.)
-- Measure CPU usage percentage
-- Scan files in a specified directory with optional recursion into subdirectories
-- Filter files based on file types, maximum file size, and exclusion patterns
-- Calculate file hashes (MD5, SHA1, SHA256, and SSDeep)
-- Output results in JSON format to a file
+- Scan files across specified paths or all drives
+- Calculate file hashes (MD5, SHA1, SHA256)
+- Extract metadata from images (EXIF), PDFs, and DOCX documents
+- Detect sensitive data patterns such as emails and credit cards
+- Output results with metrics in JSON format
 
 ## Installation
 
-To install Safnari, you can either clone the repository and build from source or download the latest pre-compiled binary from the GitHub releases page.
-
 ### Build from Source
 
-\`\`\`sh
+```sh
 git clone https://github.com/Forgence/Safnari.git
-cd Safnari/src
-go build -o safnari
-\`\`\`
+cd Safnari
+make build
+```
+
+The compiled binary will be located in the `bin` directory.
 
 ### Download Pre-Compiled Binary
 
-Check the [releases page](https://github.com/Forgence/Safnari/releases) for the latest pre-compiled binaries for your operating system.
+Check the [releases page](https://github.com/Forgence/Safnari/releases) for binaries for your operating system.
 
 ## Usage
 
-\`\`\`
-Usage of safnari:
-  -start-dir string
-        Starting directory for file scanning (default ".")
-  -debug
-        Print debug logs
-  -scan-subdirs
-        Scan subdirectories
-  -hashes
-        Calculate MD5, SHA1, SHA256, and SSDeep hashes for files
-  -exclude-pattern string
-        Pattern to exclude files/directories from scanning
-  -max-file-size int
-        Maximum file size in bytes to be included in the scan (default 0)
-  -file-types string
-        Comma-separated list of file extensions to include in the scan
-  -hash-algorithms string
-        Comma-separated list of hash algorithms to use (default "md5,sha1,sha256,ssdeep")
-  -timeout duration
-        Timeout duration for the scanning process (e.g., 30s, 5m) (default 0)
-  -output string
-        Output file for the JSON data (default "file_data.json")
-\`\`\`
+Run the binary with `--help` to see all available options. Example:
 
-## Example
+```sh
+./bin/safnari-$(go env GOOS)-$(go env GOARCH) --path /home/user --hashes sha256 --search "password"
+```
 
-To scan the current directory and calculate file hashes, run the following command:
-
-\`\`\`sh
-./safnari -hashes -start-dir ./
-\`\`\`
-
-This will output the scan results to `file_data.json` by default.
+This will scan `/home/user`, compute SHA-256 hashes, search for the term "password," and write results to `output.json` by default.
 
 ## Contributing
 
