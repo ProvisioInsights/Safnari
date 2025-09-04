@@ -1,6 +1,7 @@
 package config
 
 import (
+	"flag"
 	"os"
 	"runtime"
 	"testing"
@@ -67,5 +68,32 @@ func TestValidate(t *testing.T) {
 	cfg = &Config{ScanFiles: true, StartPaths: []string{"/"}, OutputFormat: "json", ConcurrencyLevel: 1, NiceLevel: "high", LogLevel: "info"}
 	if err := cfg.validate(); err != nil {
 		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestFuzzyHashFlagAddsAlgorithm(t *testing.T) {
+	oldArgs := os.Args
+	defer func() { os.Args = oldArgs }()
+	oldFlag := flag.CommandLine
+	flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ExitOnError)
+	defer func() { flag.CommandLine = oldFlag }()
+
+	os.Args = []string{"cmd", "--fuzzy-hash"}
+	cfg, err := LoadConfig()
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if !cfg.FuzzyHash {
+		t.Fatal("expected fuzzy hash enabled")
+	}
+	found := false
+	for _, a := range cfg.HashAlgorithms {
+		if a == "ssdeep" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatal("ssdeep algorithm not added")
 	}
 }

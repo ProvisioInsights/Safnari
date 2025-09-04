@@ -23,3 +23,8 @@ func gatherInstalledApps(sysInfo *SystemInfo) error {
 	// Stub implementation
 	return nil
 }
+
+func gatherRunningServices(sysInfo *SystemInfo) error {
+	// Stub implementation
+	return nil
+}

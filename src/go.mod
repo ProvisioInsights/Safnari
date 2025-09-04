@@ -6,6 +6,7 @@ toolchain go1.24.3
 
 require (
 	github.com/djherbis/times v1.6.0
+	github.com/glaslos/ssdeep v0.4.0
 	github.com/h2non/filetype v1.1.3
 	github.com/pdfcpu/pdfcpu v0.11.0
 	github.com/rwcarlsen/goexif v0.0.0-20190401172101-9e8deecbddbd
