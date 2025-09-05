@@ -17,7 +17,9 @@ type Config struct {
 	StartPaths          []string          `json:"start_paths"`
 	AllDrives           bool              `json:"all_drives"`
 	ScanFiles           bool              `json:"scan_files"`
+	ScanSensitive       bool              `json:"scan_sensitive"`
 	ScanProcesses       bool              `json:"scan_processes"`
+	CollectSystemInfo   bool              `json:"collect_system_info"`
 	OutputFormat        string            `json:"output_format"`
 	OutputFileName      string            `json:"output_file_name"`
 	ConcurrencyLevel    int               `json:"concurrency_level"`
@@ -48,7 +50,9 @@ func LoadConfig() (*Config, error) {
 	cfg := &Config{
 		StartPaths:        []string{"."},
 		ScanFiles:         true,
+		ScanSensitive:     true,
 		ScanProcesses:     true,
+		CollectSystemInfo: true,
 		OutputFormat:      "json",
 		OutputFileName:    fmt.Sprintf("safnari-%s-%d.json", timestamp, now.Unix()),
 		ConcurrencyLevel:  runtime.NumCPU(),
@@ -70,7 +74,9 @@ func LoadConfig() (*Config, error) {
 	startPath := flag.String("path", strings.Join(cfg.StartPaths, ","), fmt.Sprintf("Comma-separated list of start paths to scan (default: %s).", strings.Join(cfg.StartPaths, ",")))
 	allDrives := flag.Bool("all-drives", cfg.AllDrives, fmt.Sprintf("Scan all local drives (Windows only) (default: %t).", cfg.AllDrives))
 	scanFiles := flag.Bool("scan-files", cfg.ScanFiles, fmt.Sprintf("Enable file scanning (default: %t).", cfg.ScanFiles))
+	scanSensitive := flag.Bool("scan-sensitive", cfg.ScanSensitive, fmt.Sprintf("Enable sensitive data scanning (default: %t).", cfg.ScanSensitive))
 	scanProcesses := flag.Bool("scan-processes", cfg.ScanProcesses, fmt.Sprintf("Enable process scanning (default: %t).", cfg.ScanProcesses))
+	collectSystemInfo := flag.Bool("collect-system-info", cfg.CollectSystemInfo, fmt.Sprintf("Collect system information (default: %t).", cfg.CollectSystemInfo))
 	format := flag.String("format", cfg.OutputFormat, fmt.Sprintf("Output format: json or csv (default: %s).", cfg.OutputFormat))
 	output := flag.String("output", cfg.OutputFileName, "Output file name (default: safnari-<timestamp>-<unix>.json).")
 	concurrency := flag.Int("concurrency", cfg.ConcurrencyLevel, fmt.Sprintf("Concurrency level (default: %d).", cfg.ConcurrencyLevel))
@@ -118,8 +124,12 @@ func LoadConfig() (*Config, error) {
 			cfg.AllDrives = *allDrives
 		case "scan-files":
 			cfg.ScanFiles = *scanFiles
+		case "scan-sensitive":
+			cfg.ScanSensitive = *scanSensitive
 		case "scan-processes":
 			cfg.ScanProcesses = *scanProcesses
+		case "collect-system-info":
+			cfg.CollectSystemInfo = *collectSystemInfo
 		case "format":
 			cfg.OutputFormat = *format
 		case "output":
@@ -164,6 +174,9 @@ func LoadConfig() (*Config, error) {
 			cfg.SkipCount = *skipCount
 		}
 	})
+	if len(cfg.StartPaths) == 0 {
+		cfg.StartPaths = []string{"."}
+	}
 
 	if cfg.FuzzyHash {
 		found := false
@@ -213,11 +226,11 @@ func (cfg *Config) loadFromFile(path string) error {
 }
 
 func (cfg *Config) validate() error {
-	if !cfg.ScanFiles && !cfg.ScanProcesses {
-		return fmt.Errorf("at least one of --scan-files or --scan-processes must be enabled")
+	if !cfg.ScanFiles && !cfg.ScanProcesses && !cfg.ScanSensitive && !cfg.CollectSystemInfo {
+		return fmt.Errorf("at least one of --collect-system-info, --scan-files, --scan-sensitive, or --scan-processes must be enabled")
 	}
-	if len(cfg.StartPaths) == 0 && !cfg.AllDrives && cfg.ScanFiles {
-		return fmt.Errorf("either start path(s) or --all-drives must be specified for file scanning")
+	if len(cfg.StartPaths) == 0 && !cfg.AllDrives && (cfg.ScanFiles || cfg.ScanSensitive) {
+		return fmt.Errorf("either start path(s) or --all-drives must be specified for file or sensitive scanning")
 	}
 	if cfg.AllDrives && runtime.GOOS != "windows" {
 		return fmt.Errorf("--all-drives flag is only supported on Windows")

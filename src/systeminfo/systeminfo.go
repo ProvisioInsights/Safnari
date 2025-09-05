@@ -34,36 +34,40 @@ type ProcessInfo struct {
 func GetSystemInfo(cfg *config.Config) (*SystemInfo, error) {
 	sysInfo := &SystemInfo{}
 
-	if err := gatherOSVersion(sysInfo); err != nil {
-		logger.Warnf("Failed to gather OS version: %v", err)
+	if cfg.CollectSystemInfo {
+		if err := gatherOSVersion(sysInfo); err != nil {
+			logger.Warnf("Failed to gather OS version: %v", err)
+		}
+
+		if err := gatherInstalledPatches(sysInfo); err != nil {
+			logger.Warnf("Failed to gather installed patches: %v", err)
+		}
+
+		if err := gatherStartupPrograms(sysInfo); err != nil {
+			logger.Warnf("Failed to gather startup programs: %v", err)
+		}
+
+		if err := gatherInstalledApps(sysInfo); err != nil {
+			logger.Warnf("Failed to gather installed applications: %v", err)
+		}
+
+		if err := gatherNetworkInterfaces(sysInfo); err != nil {
+			logger.Warnf("Failed to gather network interfaces: %v", err)
+		}
+
+		if err := gatherOpenConnections(sysInfo); err != nil {
+			logger.Warnf("Failed to gather network connections: %v", err)
+		}
+
+		if err := gatherRunningServices(sysInfo); err != nil {
+			logger.Warnf("Failed to gather running services: %v", err)
+		}
 	}
 
-	if err := gatherInstalledPatches(sysInfo); err != nil {
-		logger.Warnf("Failed to gather installed patches: %v", err)
-	}
-
-	if err := gatherRunningProcesses(sysInfo, cfg.ExtendedProcessInfo); err != nil {
-		logger.Warnf("Failed to gather running processes: %v", err)
-	}
-
-	if err := gatherStartupPrograms(sysInfo); err != nil {
-		logger.Warnf("Failed to gather startup programs: %v", err)
-	}
-
-	if err := gatherInstalledApps(sysInfo); err != nil {
-		logger.Warnf("Failed to gather installed applications: %v", err)
-	}
-
-	if err := gatherNetworkInterfaces(sysInfo); err != nil {
-		logger.Warnf("Failed to gather network interfaces: %v", err)
-	}
-
-	if err := gatherOpenConnections(sysInfo); err != nil {
-		logger.Warnf("Failed to gather network connections: %v", err)
-	}
-
-	if err := gatherRunningServices(sysInfo); err != nil {
-		logger.Warnf("Failed to gather running services: %v", err)
+	if cfg.ScanProcesses {
+		if err := gatherRunningProcesses(sysInfo, cfg.ExtendedProcessInfo); err != nil {
+			logger.Warnf("Failed to gather running processes: %v", err)
+		}
 	}
 
 	return sysInfo, nil

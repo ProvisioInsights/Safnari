@@ -151,7 +151,7 @@ func TestCollectFileData(t *testing.T) {
 	tmp.Close()
 	defer os.Remove(tmp.Name())
 	fi, _ := os.Stat(tmp.Name())
-	cfg := &config.Config{HashAlgorithms: []string{"md5"}, MaxFileSize: 1024}
+	cfg := &config.Config{HashAlgorithms: []string{"md5"}, MaxFileSize: 1024, ScanFiles: true, ScanSensitive: true}
 	patterns := GetPatterns([]string{"email"}, nil, nil)
 	data, err := collectFileData(tmp.Name(), fi, cfg, patterns)
 	if err != nil {
@@ -173,7 +173,7 @@ func TestProcessFile(t *testing.T) {
 
 	outFile, _ := os.CreateTemp("", "out*.json")
 	defer os.Remove(outFile.Name())
-	cfg := &config.Config{HashAlgorithms: []string{"md5"}, MaxFileSize: 1024, OutputFileName: outFile.Name()}
+	cfg := &config.Config{HashAlgorithms: []string{"md5"}, MaxFileSize: 1024, ScanFiles: true, ScanSensitive: true, OutputFileName: outFile.Name()}
 	sys := &systeminfo.SystemInfo{RunningProcesses: []systeminfo.ProcessInfo{}}
 	metrics := &output.Metrics{}
 	w, err := output.New(cfg, sys, metrics)

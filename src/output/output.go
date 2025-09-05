@@ -36,6 +36,10 @@ func New(cfg *config.Config, sysInfo *systeminfo.SystemInfo, m *Metrics) (*Write
 	ext := filepath.Ext(cfg.OutputFileName)
 	base := strings.TrimSuffix(cfg.OutputFileName, ext)
 
+	if sysInfo == nil {
+		sysInfo = &systeminfo.SystemInfo{}
+	}
+
 	w := &Writer{
 		first:   true,
 		metrics: m,

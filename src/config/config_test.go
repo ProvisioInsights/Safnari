@@ -50,36 +50,36 @@ func TestLoadFromFile(t *testing.T) {
 }
 
 func TestValidate(t *testing.T) {
-	cfg := &Config{ScanFiles: false, ScanProcesses: false}
+	cfg := &Config{CollectSystemInfo: false, ScanFiles: false, ScanProcesses: false, ScanSensitive: false}
 	if err := cfg.validate(); err == nil {
-		t.Fatal("expected error when both scanning disabled")
+		t.Fatal("expected error when all gathering disabled")
 	}
-	cfg = &Config{ScanFiles: true}
+	cfg = &Config{ScanFiles: true, ScanSensitive: false}
 	if err := cfg.validate(); err == nil {
 		t.Fatal("expected error for missing paths")
 	}
-	cfg = &Config{ScanFiles: true, AllDrives: true}
+	cfg = &Config{ScanFiles: true, ScanSensitive: false, AllDrives: true}
 	if err := cfg.validate(); err == nil && runtime.GOOS != "windows" {
 		// On non-windows, AllDrives should cause error
 		t.Fatal("expected error for all drives on non-windows")
 	}
-	cfg = &Config{ScanFiles: true, StartPaths: []string{"/"}, OutputFormat: "xml"}
+	cfg = &Config{ScanFiles: true, ScanSensitive: false, StartPaths: []string{"/"}, OutputFormat: "xml"}
 	if err := cfg.validate(); err == nil {
 		t.Fatal("expected invalid output format error")
 	}
-	cfg = &Config{ScanFiles: true, StartPaths: []string{"/"}, OutputFormat: "json", ConcurrencyLevel: 0}
+	cfg = &Config{ScanFiles: true, ScanSensitive: false, StartPaths: []string{"/"}, OutputFormat: "json", ConcurrencyLevel: 0}
 	if err := cfg.validate(); err == nil {
 		t.Fatal("expected invalid concurrency")
 	}
-	cfg = &Config{ScanFiles: true, StartPaths: []string{"/"}, OutputFormat: "json", ConcurrencyLevel: 1, NiceLevel: "bad"}
+	cfg = &Config{ScanFiles: true, ScanSensitive: false, StartPaths: []string{"/"}, OutputFormat: "json", ConcurrencyLevel: 1, NiceLevel: "bad"}
 	if err := cfg.validate(); err == nil {
 		t.Fatal("expected invalid nice level")
 	}
-	cfg = &Config{ScanFiles: true, StartPaths: []string{"/"}, OutputFormat: "json", ConcurrencyLevel: 1, NiceLevel: "high", LogLevel: "bad"}
+	cfg = &Config{ScanFiles: true, ScanSensitive: false, StartPaths: []string{"/"}, OutputFormat: "json", ConcurrencyLevel: 1, NiceLevel: "high", LogLevel: "bad"}
 	if err := cfg.validate(); err == nil {
 		t.Fatal("expected invalid log level")
 	}
-	cfg = &Config{ScanFiles: true, StartPaths: []string{"/"}, OutputFormat: "json", ConcurrencyLevel: 1, NiceLevel: "high", LogLevel: "info"}
+	cfg = &Config{ScanFiles: true, ScanSensitive: false, StartPaths: []string{"/"}, OutputFormat: "json", ConcurrencyLevel: 1, NiceLevel: "high", LogLevel: "info"}
 	if err := cfg.validate(); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -126,5 +126,39 @@ func TestIncludeSensitiveFlag(t *testing.T) {
 	}
 	if len(cfg.IncludeDataTypes) != 2 || len(cfg.ExcludeDataTypes) != 1 || cfg.ExcludeDataTypes[0] != "email" {
 		t.Fatalf("unexpected cfg: %+v", cfg)
+	}
+}
+
+func TestScanSensitiveFlag(t *testing.T) {
+	oldArgs := os.Args
+	defer func() { os.Args = oldArgs }()
+	oldFlag := flag.CommandLine
+	flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ExitOnError)
+	defer func() { flag.CommandLine = oldFlag }()
+
+	os.Args = []string{"cmd", "--scan-sensitive=false"}
+	cfg, err := LoadConfig()
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if cfg.ScanSensitive {
+		t.Fatal("expected sensitive scanning disabled")
+	}
+}
+
+func TestCollectSystemInfoFlag(t *testing.T) {
+	oldArgs := os.Args
+	defer func() { os.Args = oldArgs }()
+	oldFlag := flag.CommandLine
+	flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ExitOnError)
+	defer func() { flag.CommandLine = oldFlag }()
+
+	os.Args = []string{"cmd", "--collect-system-info=false"}
+	cfg, err := LoadConfig()
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if cfg.CollectSystemInfo {
+		t.Fatal("expected system info collection disabled")
 	}
 }
