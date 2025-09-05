@@ -54,6 +54,17 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           path: bin
+      - name: Compute release tag
+        id: release_tag
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          date=$(date -u +%Y%m%d)
+          count=$(gh release list --limit 100 --json tagName \
+            | jq --arg date "$date" '[.[] | select(.tagName | startswith("safnari-" + $date))] | length')
+          letter=$(printf '%b' "$(printf '\\%03o' $((97 + count)))")
+          echo "tag=safnari-${date}${letter}" >> "$GITHUB_OUTPUT"
       - name: Release on tag
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v1
@@ -64,5 +75,5 @@ jobs:
         uses: softprops/action-gh-release@v1
         with:
           files: bin/**
-          tag_name: main-${{ github.sha }}
-          name: main-${{ github.sha }}
+          tag_name: ${{ steps.release_tag.outputs.tag }}
+          name: ${{ steps.release_tag.outputs.tag }}

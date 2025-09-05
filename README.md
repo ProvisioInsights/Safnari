@@ -65,7 +65,9 @@ Trace-enabled builds record code-level tasks and regions to `trace.out`. Use
 ### Download Pre-Compiled Binary
 
 Check the [releases page](https://github.com/ProvisioInsights/Safnari/releases) for
-binaries for your operating system.
+binaries for your operating system. Releases use the `safnari-<date><letter>` naming
+scheme, where `date` is in `YYYYMMDD` format and `letter` increments if multiple releases
+occur on the same day.
 
 ## Usage
 
