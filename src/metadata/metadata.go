@@ -3,6 +3,7 @@ package metadata
 import (
 	"archive/zip"
 	"encoding/xml"
+	"maps"
 	"os"
 	"time"
 
@@ -16,19 +17,13 @@ func ExtractMetadata(path string, mimeType string) map[string]interface{} {
 	switch mimeType {
 	case "image/jpeg", "image/png":
 		meta := extractImageMetadata(path)
-		for k, v := range meta {
-			metadata[k] = v
-		}
+		maps.Copy(metadata, meta)
 	case "application/pdf":
 		meta := extractPDFMetadata(path)
-		for k, v := range meta {
-			metadata[k] = v
-		}
+		maps.Copy(metadata, meta)
 	case "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
 		meta := extractDOCXMetadata(path)
-		for k, v := range meta {
-			metadata[k] = v
-		}
+		maps.Copy(metadata, meta)
 	default:
 		// Unsupported MIME type for metadata extraction
 	}
