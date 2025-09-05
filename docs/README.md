@@ -15,8 +15,9 @@ This directory contains extended documentation for Safnari.
 Safnari collects file metadata and system information from user specified paths. It can hash files,
 search for sensitive strings such as emails, credit cards, AWS keys, JWT tokens, street addresses,
 IBANs, UK National Insurance numbers, EU VAT IDs, India Aadhaar numbers,
-China resident IDs, and custom regex patterns. Sensitive data checks can be
-enabled or disabled individually. Safnari also reports system details such as
+China resident IDs, and custom regex patterns. Scan only selected types with
+`--include-sensitive-data-types` or skip some with `--exclude-sensitive-data-types`.
+Safnari also reports system details such as
 running processes. The goal of this documentation is to provide deeper
 explanations and examples than the top level README.
 
@@ -91,8 +92,8 @@ Safnari accepts the following flags. Each description lists the default value in
 - `--config`: Path to JSON configuration file (default: none).
 - `--extended-process-info`: Gather extended process information (requires
   elevated privileges) (default: `false`).
-- `--sensitive-data-types`: Comma-separated list of sensitive data types to scan
-  for. Use `all` to include all built-in patterns (default: none).
+- `--include-sensitive-data-types`: Comma-separated list of sensitive data types
+  to include when scanning. Use `all` to include all built-in patterns (default: none).
 - `--exclude-sensitive-data-types`: Comma-separated list of sensitive data types
   to skip when scanning (default: none).
 - `--custom-patterns`: Custom sensitive data patterns as name:regex pairs

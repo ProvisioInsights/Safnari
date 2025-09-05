@@ -12,7 +12,7 @@ configuration flags for filtering, hashing, and output control.
 - Scan files across specified paths or all drives
 - Calculate file hashes (MD5, SHA1, SHA256)
 - Extract metadata from images (EXIF), PDFs, and DOCX documents
-- Detect sensitive data patterns such as emails, credit cards (with Luhn validation), AWS keys, JWT tokens, street addresses, IBANs, UK National Insurance numbers, EU VAT IDs, India Aadhaar numbers, China resident IDs, and user-defined regexes. Patterns can be enabled or disabled individually.
+ - Detect sensitive data patterns such as emails, credit cards (with Luhn validation), AWS keys, JWT tokens, street addresses, IBANs, UK National Insurance numbers, EU VAT IDs, India Aadhaar numbers, China resident IDs, and user-defined regexes. Users can scan only selected types with `--include-sensitive-data-types` or skip some with `--exclude-sensitive-data-types`.
 - Output results with metrics in JSON format
 
 ## Installation
@@ -97,7 +97,7 @@ Running Safnari without any flags applies these defaults:
 - `--max-io-per-second`: `1000`
 - `--config`: none
 - `--extended-process-info`: `false`
-- `--sensitive-data-types`: none
+- `--include-sensitive-data-types`: none
 - `--exclude-sensitive-data-types`: none
 - `--fuzzy-hash`: `false`
 - `--delta-scan`: `false`

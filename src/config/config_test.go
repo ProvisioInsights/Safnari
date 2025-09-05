@@ -108,19 +108,19 @@ func TestFuzzyHashFlagAddsAlgorithm(t *testing.T) {
 	}
 }
 
-func TestExcludeSensitiveFlag(t *testing.T) {
+func TestIncludeSensitiveFlag(t *testing.T) {
 	oldArgs := os.Args
 	defer func() { os.Args = oldArgs }()
 	oldFlag := flag.CommandLine
 	flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ExitOnError)
 	defer func() { flag.CommandLine = oldFlag }()
 
-	os.Args = []string{"cmd", "--sensitive-data-types", "email,credit_card", "--exclude-sensitive-data-types", "email"}
+	os.Args = []string{"cmd", "--include-sensitive-data-types", "email,credit_card", "--exclude-sensitive-data-types", "email"}
 	cfg, err := LoadConfig()
 	if err != nil {
 		t.Fatalf("load: %v", err)
 	}
-	if len(cfg.SensitiveDataTypes) != 2 || len(cfg.ExcludeDataTypes) != 1 || cfg.ExcludeDataTypes[0] != "email" {
+	if len(cfg.IncludeDataTypes) != 2 || len(cfg.ExcludeDataTypes) != 1 || cfg.ExcludeDataTypes[0] != "email" {
 		t.Fatalf("unexpected cfg: %+v", cfg)
 	}
 }
