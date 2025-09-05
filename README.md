@@ -1,6 +1,9 @@
 # Safnari: File and System Information Gatherer
 
-Safnari is a versatile tool for gathering file and system information from a host machine. It scans user-defined paths, collects rich metadata about files, and retrieves system details such as running processes. Safnari supports numerous configuration flags for filtering, hashing, and output control.
+Safnari is a versatile tool for gathering file and system information from a host
+machine. It scans user-defined paths, collects rich metadata about files, and
+retrieves system details such as running processes. Safnari supports numerous
+configuration flags for filtering, hashing, and output control.
 
 ## Features
 
@@ -17,7 +20,7 @@ Safnari is a versatile tool for gathering file and system information from a hos
 ### Build from Source
 
 ```sh
-git clone https://github.com/Forgence/Safnari.git
+git clone https://github.com/ProvisioInsights/Safnari.git
 cd Safnari
 make build
 ```
@@ -61,7 +64,8 @@ Trace-enabled builds record code-level tasks and regions to `trace.out`. Use
 
 ### Download Pre-Compiled Binary
 
-Check the [releases page](https://github.com/Forgence/Safnari/releases) for binaries for your operating system.
+Check the [releases page](https://github.com/ProvisioInsights/Safnari/releases) for
+binaries for your operating system.
 
 ## Usage
 
@@ -70,6 +74,34 @@ the current working directory using a concurrency level equal to the number of
 logical CPUs. It does not search for any strings or sensitive data types unless
 explicitly requested and writes results to a timestamped file named
 `safnari-<human-readable>-<unix>.json`.
+
+### Default flags
+
+Running Safnari without any flags applies these defaults:
+
+- `--path`: `.`
+- `--all-drives`: `false`
+- `--scan-files`: `true`
+- `--scan-processes`: `true`
+- `--format`: `json`
+- `--output`: `safnari-<timestamp>-<unix>.json`
+- `--concurrency`: number of logical CPUs
+- `--nice`: `medium`
+- `--hashes`: `md5,sha1,sha256`
+- `--search`: none
+- `--include`: none
+- `--exclude`: none
+- `--max-file-size`: `10485760`
+- `--max-output-file-size`: `104857600`
+- `--log-level`: `info`
+- `--max-io-per-second`: `1000`
+- `--config`: none
+- `--extended-process-info`: `false`
+- `--sensitive-data-types`: none
+- `--fuzzy-hash`: `false`
+- `--delta-scan`: `false`
+- `--last-scan-file`: `.safnari_last_scan`
+- `--last-scan`: none
 
 ```sh
 ./bin/safnari-$(go env GOOS)-$(go env GOARCH) --path /home/user --hashes sha256 --search "password"
@@ -100,7 +132,8 @@ make test
 
 ## Contributing
 
-Contributions to Safnari are always welcome! Feel free to open issues or submit pull requests to help improve the project.
+Contributions to Safnari are always welcome! Feel free to open issues or submit
+pull requests to help improve the project.
 
 ## License
 
