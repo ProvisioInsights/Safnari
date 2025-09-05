@@ -21,7 +21,7 @@ documentation is to provide deeper explanations and examples than the top level 
 Safnari is written in Go. Building from source requires a recent Go toolchain and GNU Make.
 
 ```sh
-git clone https://github.com/Forgence/Safnari.git
+git clone https://github.com/ProvisioInsights/Safnari.git
 cd Safnari
 make build
 ```
@@ -65,20 +65,38 @@ is available.
 
 ## Configuration
 
-Common flags include:
+Safnari accepts the following flags. Each description lists the default value in parentheses:
 
-- `--path`: Comma separated list of paths to scan. Defaults to the current directory.
-- `--hashes`: Comma separated list of hash algorithms to compute.
-- `--search`: Search string or regular expression to look for in file contents.
-- `--output`: Output filename. Defaults to a timestamped JSON file.
-- `--concurrency`: Number of worker goroutines. Defaults to the number of logical CPUs.
-- `--delta-scan`: Skip files not modified since the last run. Timestamp is stored in
-  `.safnari_last_scan`.
-- `--last-scan-file`: Path to an alternate timestamp file used with `--delta-scan`.
-- `--last-scan`: Timestamp of the previous scan in RFC3339 format (e.g.
-  `2006-01-02T15:04:05Z`) used with `--delta-scan`.
+- `--path`: Comma-separated list of start paths to scan (default: `.`).
+- `--all-drives`: Scan all local drives (Windows only) (default: `false`).
+- `--scan-files`: Enable file scanning (default: `true`).
+- `--scan-processes`: Enable process scanning (default: `true`).
+- `--format`: Output format: json or csv (default: `json`).
+- `--output`: Output file name (default: `safnari-<timestamp>-<unix>.json`).
+- `--concurrency`: Concurrency level (default: number of logical CPUs).
+- `--nice`: Nice level: high, medium, or low (default: `medium`).
+- `--hashes`: Comma-separated list of hash algorithms (default: `md5,sha1,sha256`).
+- `--search`: Comma-separated list of search terms (default: none).
+- `--include`: Comma-separated list of include patterns (default: none).
+- `--exclude`: Comma-separated list of exclude patterns (default: none).
+- `--max-file-size`: Maximum file size to process in bytes (default: `10485760`).
+- `--max-output-file-size`: Maximum output file size before rotation in bytes
+  (default: `104857600`).
+- `--log-level`: Log level: debug, info, warn, error, fatal, or panic (default: `info`).
+- `--max-io-per-second`: Maximum disk I/O operations per second (default: `1000`).
+- `--config`: Path to JSON configuration file (default: none).
+- `--extended-process-info`: Gather extended process information (requires
+  elevated privileges) (default: `false`).
+- `--sensitive-data-types`: Comma-separated list of sensitive data types to scan
+  for (default: none).
+- `--fuzzy-hash`: Enable fuzzy hashing (ssdeep) (default: `false`).
+- `--delta-scan`: Only scan files modified since the last run (default: `false`).
+- `--last-scan-file`: Path to timestamp file for delta scans (default: `.safnari_last_scan`).
+- `--last-scan`: Timestamp of last scan in RFC3339 format (e.g.,
+  `2006-01-02T15:04:05Z`) (default: none).
+- `--version`: Print version and exit.
 
-See `./bin/safnari --help` for a complete list of flags.
+See `./bin/safnari --help` for detailed usage information.
 
 ## Examples
 
