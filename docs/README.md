@@ -41,6 +41,16 @@ cd src
 go build -ldflags "-X safnari/version.Version=v1.0.2" -o ../bin/safnari ./cmd
 ```
 
+## Development
+
+Format, lint, and test the codebase before submitting patches:
+
+```sh
+make fmt
+make lint
+make test
+```
+
 ## Usage
 
 Run the compiled binary with desired flags. Running with `-h` prints all options.

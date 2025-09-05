@@ -88,6 +88,16 @@ security fixes, is available.
 
 See the [docs](docs/README.md) directory for extended guides and additional examples.
 
+## Development
+
+Before submitting changes, format the Go source and run the linters and tests:
+
+```sh
+make fmt
+make lint
+make test
+```
+
 ## Contributing
 
 Contributions to Safnari are always welcome! Feel free to open issues or submit pull requests to help improve the project.

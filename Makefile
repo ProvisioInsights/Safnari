@@ -5,7 +5,7 @@ BIN_DIR := bin
 BIN := $(BIN_DIR)/safnari-$(GOOS)-$(GOARCH)$(EXT)
 PLATFORMS := linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64
 
-.PHONY: build build-all test lint clean
+.PHONY: build build-all fmt test lint clean
 
 build:
 	@mkdir -p $(BIN_DIR)
@@ -23,6 +23,9 @@ test:
 
 lint:
 	cd src && go vet ./...
+
+fmt:
+	cd src && gofmt -w .
 
 clean:
 	rm -rf $(BIN_DIR)
