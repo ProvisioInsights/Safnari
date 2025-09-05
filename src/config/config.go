@@ -33,6 +33,7 @@ type Config struct {
 	ConfigFile          string            `json:"config_file"`
 	ExtendedProcessInfo bool              `json:"extended_process_info"`
 	SensitiveDataTypes  []string          `json:"sensitive_data_types"`
+	ExcludeDataTypes    []string          `json:"exclude_sensitive_data_types"`
 	CustomPatterns      map[string]string `json:"custom_patterns"`
 	FuzzyHash           bool              `json:"fuzzy_hash"`
 	DeltaScan           bool              `json:"delta_scan"`
@@ -59,6 +60,7 @@ func LoadConfig() (*Config, error) {
 		LogLevel:           "info",
 		MaxIOPerSecond:     1000,
 		SensitiveDataTypes: []string{},
+		ExcludeDataTypes:   []string{},
 		CustomPatterns:     map[string]string{},
 		DeltaScan:          false,
 		LastScanFile:       ".safnari_last_scan",
@@ -84,7 +86,8 @@ func LoadConfig() (*Config, error) {
 	skipCount := flag.Bool("skip-count", cfg.SkipCount, "Skip initial file counting to start scanning immediately")
 	configFile := flag.String("config", "", "Path to JSON configuration file (default: none).")
 	extendedProcessInfo := flag.Bool("extended-process-info", cfg.ExtendedProcessInfo, fmt.Sprintf("Gather extended process information (requires elevated privileges) (default: %t).", cfg.ExtendedProcessInfo))
-	sensitiveDataTypes := flag.String("sensitive-data-types", "", "Comma-separated list of sensitive data types to scan for (default: none).")
+	sensitiveDataTypes := flag.String("sensitive-data-types", "", "Comma-separated list of sensitive data types to scan for (default: none). Use 'all' to include all built-in types.")
+	excludeDataTypes := flag.String("exclude-sensitive-data-types", "", "Comma-separated list of sensitive data types to exclude when scanning.")
 	customPatterns := flag.String("custom-patterns", "", "Custom sensitive data patterns in the format name:regex,...")
 	fuzzyHash := flag.Bool("fuzzy-hash", cfg.FuzzyHash, fmt.Sprintf("Enable fuzzy hashing (ssdeep) (default: %t).", cfg.FuzzyHash))
 	deltaScan := flag.Bool("delta-scan", cfg.DeltaScan, fmt.Sprintf("Only scan files modified since the last run (default: %t).", cfg.DeltaScan))
@@ -145,6 +148,8 @@ func LoadConfig() (*Config, error) {
 			cfg.ExtendedProcessInfo = *extendedProcessInfo
 		case "sensitive-data-types":
 			cfg.SensitiveDataTypes = parseCommaSeparated(*sensitiveDataTypes)
+		case "exclude-sensitive-data-types":
+			cfg.ExcludeDataTypes = parseCommaSeparated(*excludeDataTypes)
 		case "custom-patterns":
 			cfg.CustomPatterns = parseCustomPatterns(*customPatterns)
 		case "fuzzy-hash":
