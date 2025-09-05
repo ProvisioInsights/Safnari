@@ -87,7 +87,7 @@ func ScanFiles(ctx context.Context, cfg *config.Config, metrics *output.Metrics,
 	adjustConcurrency(cfg)
 
 	// Prepare sensitive data patterns
-	sensitivePatterns := GetPatterns(cfg.SensitiveDataTypes)
+	sensitivePatterns := GetPatterns(cfg.SensitiveDataTypes, cfg.CustomPatterns)
 
 	// Implement I/O rate limiter
 	ioLimiter := rate.NewLimiter(rate.Limit(cfg.MaxIOPerSecond), cfg.MaxIOPerSecond)

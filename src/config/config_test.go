@@ -17,6 +17,16 @@ func TestParseCommaSeparated(t *testing.T) {
 	}
 }
 
+func TestParseCustomPatterns(t *testing.T) {
+	res := parseCustomPatterns("a:1+,b:2?")
+	if res["a"] != "1+" || res["b"] != "2?" {
+		t.Fatalf("unexpected result: %v", res)
+	}
+	if res := parseCustomPatterns(""); len(res) != 0 {
+		t.Fatalf("expected empty map")
+	}
+}
+
 func TestLoadFromFile(t *testing.T) {
 	tmp, err := os.CreateTemp("", "cfg*.json")
 	if err != nil {

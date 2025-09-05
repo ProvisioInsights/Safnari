@@ -14,30 +14,31 @@ import (
 )
 
 type Config struct {
-	StartPaths          []string `json:"start_paths"`
-	AllDrives           bool     `json:"all_drives"`
-	ScanFiles           bool     `json:"scan_files"`
-	ScanProcesses       bool     `json:"scan_processes"`
-	OutputFormat        string   `json:"output_format"`
-	OutputFileName      string   `json:"output_file_name"`
-	ConcurrencyLevel    int      `json:"concurrency_level"`
-	NiceLevel           string   `json:"nice_level"`
-	HashAlgorithms      []string `json:"hash_algorithms"`
-	SearchTerms         []string `json:"search_terms"`
-	IncludePatterns     []string `json:"include_patterns"`
-	ExcludePatterns     []string `json:"exclude_patterns"`
-	MaxFileSize         int64    `json:"max_file_size"`
-	MaxOutputFileSize   int64    `json:"max_output_file_size"`
-	LogLevel            string   `json:"log_level"`
-	MaxIOPerSecond      int      `json:"max_io_per_second"`
-	ConfigFile          string   `json:"config_file"`
-	ExtendedProcessInfo bool     `json:"extended_process_info"`
-	SensitiveDataTypes  []string `json:"sensitive_data_types"`
-	FuzzyHash           bool     `json:"fuzzy_hash"`
-	DeltaScan           bool     `json:"delta_scan"`
-	LastScanFile        string   `json:"last_scan_file"`
-	LastScanTime        string   `json:"last_scan_time"`
-	SkipCount           bool     `json:"skip_count"`
+	StartPaths          []string          `json:"start_paths"`
+	AllDrives           bool              `json:"all_drives"`
+	ScanFiles           bool              `json:"scan_files"`
+	ScanProcesses       bool              `json:"scan_processes"`
+	OutputFormat        string            `json:"output_format"`
+	OutputFileName      string            `json:"output_file_name"`
+	ConcurrencyLevel    int               `json:"concurrency_level"`
+	NiceLevel           string            `json:"nice_level"`
+	HashAlgorithms      []string          `json:"hash_algorithms"`
+	SearchTerms         []string          `json:"search_terms"`
+	IncludePatterns     []string          `json:"include_patterns"`
+	ExcludePatterns     []string          `json:"exclude_patterns"`
+	MaxFileSize         int64             `json:"max_file_size"`
+	MaxOutputFileSize   int64             `json:"max_output_file_size"`
+	LogLevel            string            `json:"log_level"`
+	MaxIOPerSecond      int               `json:"max_io_per_second"`
+	ConfigFile          string            `json:"config_file"`
+	ExtendedProcessInfo bool              `json:"extended_process_info"`
+	SensitiveDataTypes  []string          `json:"sensitive_data_types"`
+	CustomPatterns      map[string]string `json:"custom_patterns"`
+	FuzzyHash           bool              `json:"fuzzy_hash"`
+	DeltaScan           bool              `json:"delta_scan"`
+	LastScanFile        string            `json:"last_scan_file"`
+	LastScanTime        string            `json:"last_scan_time"`
+	SkipCount           bool              `json:"skip_count"`
 }
 
 func LoadConfig() (*Config, error) {
@@ -58,6 +59,7 @@ func LoadConfig() (*Config, error) {
 		LogLevel:           "info",
 		MaxIOPerSecond:     1000,
 		SensitiveDataTypes: []string{},
+		CustomPatterns:     map[string]string{},
 		DeltaScan:          false,
 		LastScanFile:       ".safnari_last_scan",
 		SkipCount:          false,
@@ -83,6 +85,7 @@ func LoadConfig() (*Config, error) {
 	configFile := flag.String("config", "", "Path to JSON configuration file (default: none).")
 	extendedProcessInfo := flag.Bool("extended-process-info", cfg.ExtendedProcessInfo, fmt.Sprintf("Gather extended process information (requires elevated privileges) (default: %t).", cfg.ExtendedProcessInfo))
 	sensitiveDataTypes := flag.String("sensitive-data-types", "", "Comma-separated list of sensitive data types to scan for (default: none).")
+	customPatterns := flag.String("custom-patterns", "", "Custom sensitive data patterns in the format name:regex,...")
 	fuzzyHash := flag.Bool("fuzzy-hash", cfg.FuzzyHash, fmt.Sprintf("Enable fuzzy hashing (ssdeep) (default: %t).", cfg.FuzzyHash))
 	deltaScan := flag.Bool("delta-scan", cfg.DeltaScan, fmt.Sprintf("Only scan files modified since the last run (default: %t).", cfg.DeltaScan))
 	lastScanFile := flag.String("last-scan-file", cfg.LastScanFile, fmt.Sprintf("Path to timestamp file for delta scans (default: %s).", cfg.LastScanFile))
@@ -142,6 +145,8 @@ func LoadConfig() (*Config, error) {
 			cfg.ExtendedProcessInfo = *extendedProcessInfo
 		case "sensitive-data-types":
 			cfg.SensitiveDataTypes = parseCommaSeparated(*sensitiveDataTypes)
+		case "custom-patterns":
+			cfg.CustomPatterns = parseCustomPatterns(*customPatterns)
 		case "fuzzy-hash":
 			cfg.FuzzyHash = *fuzzyHash
 		case "delta-scan":
@@ -245,4 +250,23 @@ func parseCommaSeparated(input string) []string {
 		items[i] = strings.TrimSpace(item)
 	}
 	return items
+}
+
+func parseCustomPatterns(input string) map[string]string {
+	patterns := make(map[string]string)
+	if input == "" {
+		return patterns
+	}
+	pairs := strings.Split(input, ",")
+	for _, p := range pairs {
+		parts := strings.SplitN(p, ":", 2)
+		if len(parts) == 2 {
+			name := strings.TrimSpace(parts[0])
+			regex := strings.TrimSpace(parts[1])
+			if name != "" && regex != "" {
+				patterns[name] = regex
+			}
+		}
+	}
+	return patterns
 }

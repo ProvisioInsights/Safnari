@@ -13,7 +13,8 @@ This directory contains extended documentation for Safnari.
 ## Overview
 
 Safnari collects file metadata and system information from user specified paths. It can hash files,
-search for sensitive strings, and report system details such as running processes. The goal of this
+search for sensitive strings such as emails, credit cards, AWS keys, JWT tokens, street addresses,
+and custom regex patterns, and report system details such as running processes. The goal of this
 documentation is to provide deeper explanations and examples than the top level README.
 
 ## Building
@@ -89,6 +90,8 @@ Safnari accepts the following flags. Each description lists the default value in
   elevated privileges) (default: `false`).
 - `--sensitive-data-types`: Comma-separated list of sensitive data types to scan
   for (default: none).
+- `--custom-patterns`: Custom sensitive data patterns as name:regex pairs
+  (default: none).
 - `--fuzzy-hash`: Enable fuzzy hashing (ssdeep) (default: `false`).
 - `--delta-scan`: Only scan files modified since the last run (default: `false`).
 - `--last-scan-file`: Path to timestamp file for delta scans (default: `.safnari_last_scan`).

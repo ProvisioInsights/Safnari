@@ -12,7 +12,7 @@ configuration flags for filtering, hashing, and output control.
 - Scan files across specified paths or all drives
 - Calculate file hashes (MD5, SHA1, SHA256)
 - Extract metadata from images (EXIF), PDFs, and DOCX documents
-- Detect sensitive data patterns such as emails and credit cards
+- Detect sensitive data patterns such as emails, credit cards (with Luhn validation), AWS keys, JWT tokens, street addresses, and user-defined regexes
 - Output results with metrics in JSON format
 
 ## Installation
