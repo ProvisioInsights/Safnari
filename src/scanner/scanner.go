@@ -46,21 +46,40 @@ func ScanFiles(ctx context.Context, cfg *config.Config, metrics *output.Metrics,
 		cfg.StartPaths = drives
 	}
 
-	// Display message about initial file count
-	logger.Info("Counting total number of files...")
 	totalFiles := 0
-	for _, startPath := range cfg.StartPaths {
-		count, err := countTotalFiles(startPath, cfg, lastScanTime)
-		if err != nil {
-			logger.Warnf("Failed to count files in %s: %v", startPath, err)
-			continue
-		}
-		totalFiles += count
-	}
-	logger.Infof("Total files to scan: %d", totalFiles)
+	var bar *progressbar.ProgressBar
 
-	// Update metrics with total file count
-	metrics.TotalFiles = totalFiles
+	if cfg.SkipCount {
+		logger.Info("Skipping total file count")
+		bar = progressbar.NewOptions(-1,
+			progressbar.OptionSetDescription("Scanning files"),
+			progressbar.OptionShowCount(),
+			progressbar.OptionSpinnerType(14),
+			progressbar.OptionFullWidth(),
+		)
+	} else {
+		// Display message about initial file count
+		logger.Info("Counting total number of files...")
+		for _, startPath := range cfg.StartPaths {
+			count, err := countTotalFiles(startPath, cfg, lastScanTime)
+			if err != nil {
+				logger.Warnf("Failed to count files in %s: %v", startPath, err)
+				continue
+			}
+			totalFiles += count
+		}
+		logger.Infof("Total files to scan: %d", totalFiles)
+
+		// Update metrics with total file count
+		metrics.TotalFiles = totalFiles
+
+		bar = progressbar.NewOptions(totalFiles,
+			progressbar.OptionSetDescription("Scanning files"),
+			progressbar.OptionShowCount(),
+			progressbar.OptionSetPredictTime(true),
+			progressbar.OptionFullWidth(),
+		)
+	}
 
 	filesChan := make(chan string, cfg.ConcurrencyLevel)
 	var wg sync.WaitGroup
@@ -69,14 +88,6 @@ func ScanFiles(ctx context.Context, cfg *config.Config, metrics *output.Metrics,
 
 	// Prepare sensitive data patterns
 	sensitivePatterns := GetPatterns(cfg.SensitiveDataTypes)
-
-	// Initialize progress bar
-	bar := progressbar.NewOptions(totalFiles,
-		progressbar.OptionSetDescription("Scanning files"),
-		progressbar.OptionShowCount(),
-		progressbar.OptionSetPredictTime(true),
-		progressbar.OptionFullWidth(),
-	)
 
 	// Implement I/O rate limiter
 	ioLimiter := rate.NewLimiter(rate.Limit(cfg.MaxIOPerSecond), cfg.MaxIOPerSecond)
@@ -136,6 +147,9 @@ func ScanFiles(ctx context.Context, cfg *config.Config, metrics *output.Metrics,
 	}
 
 	wg.Wait()
+	if cfg.SkipCount {
+		metrics.TotalFiles = metrics.FilesProcessed
+	}
 	if cfg.DeltaScan && cfg.LastScanFile != "" {
 		if err := os.WriteFile(cfg.LastScanFile, []byte(time.Now().UTC().Format(time.RFC3339)), 0644); err != nil {
 			logger.Warnf("Failed to write last scan time: %v", err)
