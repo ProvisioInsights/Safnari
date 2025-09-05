@@ -93,3 +93,28 @@ func TestWriteDataConcurrent(t *testing.T) {
 		}
 	}
 }
+
+func TestOutputRotation(t *testing.T) {
+	tmpDir := t.TempDir()
+	base := tmpDir + "/out.json"
+
+	cfg := &config.Config{OutputFileName: base, MaxOutputFileSize: 200}
+	sysInfo := &systeminfo.SystemInfo{RunningProcesses: []systeminfo.ProcessInfo{}}
+	w, err := New(cfg, sysInfo, &Metrics{})
+	if err != nil {
+		t.Fatalf("init: %v", err)
+	}
+
+	large := strings.Repeat("a", 150)
+	for i := 0; i < 5; i++ {
+		w.WriteData(map[string]interface{}{"data": large})
+	}
+	w.Close()
+
+	if _, err := os.Stat(base); err != nil {
+		t.Fatalf("missing base file: %v", err)
+	}
+	if _, err := os.Stat(strings.TrimSuffix(base, ".json") + ".1.json"); err != nil {
+		t.Fatalf("rotation file not created")
+	}
+}

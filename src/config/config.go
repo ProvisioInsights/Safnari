@@ -37,6 +37,7 @@ type Config struct {
 	DeltaScan           bool     `json:"delta_scan"`
 	LastScanFile        string   `json:"last_scan_file"`
 	LastScanTime        string   `json:"last_scan_time"`
+	SkipCount           bool     `json:"skip_count"`
 }
 
 func LoadConfig() (*Config, error) {
@@ -59,6 +60,7 @@ func LoadConfig() (*Config, error) {
 		SensitiveDataTypes: []string{},
 		DeltaScan:          false,
 		LastScanFile:       ".safnari_last_scan",
+		SkipCount:          false,
 	}
 
 	startPath := flag.String("path", strings.Join(cfg.StartPaths, ","), fmt.Sprintf("Comma-separated list of start paths to scan (default: %s).", strings.Join(cfg.StartPaths, ",")))
@@ -77,6 +79,7 @@ func LoadConfig() (*Config, error) {
 	maxOutputFileSize := flag.Int64("max-output-file-size", cfg.MaxOutputFileSize, fmt.Sprintf("Maximum output file size before rotation in bytes (default: %d).", cfg.MaxOutputFileSize))
 	logLevel := flag.String("log-level", cfg.LogLevel, fmt.Sprintf("Log level: debug, info, warn, error, fatal, or panic (default: %s).", cfg.LogLevel))
 	maxIO := flag.Int("max-io-per-second", cfg.MaxIOPerSecond, fmt.Sprintf("Maximum disk I/O operations per second (default: %d).", cfg.MaxIOPerSecond))
+	skipCount := flag.Bool("skip-count", cfg.SkipCount, "Skip initial file counting to start scanning immediately")
 	configFile := flag.String("config", "", "Path to JSON configuration file (default: none).")
 	extendedProcessInfo := flag.Bool("extended-process-info", cfg.ExtendedProcessInfo, fmt.Sprintf("Gather extended process information (requires elevated privileges) (default: %t).", cfg.ExtendedProcessInfo))
 	sensitiveDataTypes := flag.String("sensitive-data-types", "", "Comma-separated list of sensitive data types to scan for (default: none).")
@@ -147,6 +150,8 @@ func LoadConfig() (*Config, error) {
 			cfg.LastScanFile = *lastScanFile
 		case "last-scan":
 			cfg.LastScanTime = *lastScanTime
+		case "skip-count":
+			cfg.SkipCount = *skipCount
 		}
 	})
 

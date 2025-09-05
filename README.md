@@ -102,6 +102,7 @@ Running Safnari without any flags applies these defaults:
 - `--delta-scan`: `false`
 - `--last-scan-file`: `.safnari_last_scan`
 - `--last-scan`: none
+- `--skip-count`: `false`
 
 ```sh
 ./bin/safnari-$(go env GOOS)-$(go env GOARCH) --path /home/user --hashes sha256 --search "password"
