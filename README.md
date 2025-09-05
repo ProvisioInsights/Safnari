@@ -13,6 +13,8 @@ configuration flags for filtering, hashing, and output control.
 - Calculate file hashes (MD5, SHA1, SHA256)
 - Extract metadata from images (EXIF), PDFs, and DOCX documents
  - Detect sensitive data patterns such as emails, credit cards (with Luhn validation), AWS keys, JWT tokens, street addresses, IBANs, UK National Insurance numbers, EU VAT IDs, India Aadhaar numbers, China resident IDs, and user-defined regexes via the `--custom-patterns` JSON flag. Users can scan only selected types with `--include-sensitive-data-types` or skip some with `--exclude-sensitive-data-types`.
+- Toggle system information gathering, file metadata scanning, sensitive data detection,
+  and process enumeration independently via CLI flags
 - Output results with metrics in JSON format
 
 ## Installation
@@ -89,7 +91,9 @@ Running Safnari without any flags applies these defaults:
 - `--path`: `.`
 - `--all-drives`: `false`
 - `--scan-files`: `true`
+- `--scan-sensitive`: `true`
 - `--scan-processes`: `true`
+- `--collect-system-info`: `true`
 - `--format`: `json`
 - `--output`: `safnari-<timestamp>-<unix>.json`
 - `--concurrency`: number of logical CPUs

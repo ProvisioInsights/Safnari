@@ -16,10 +16,10 @@ Safnari collects file metadata and system information from user specified paths.
 search for sensitive strings such as emails, credit cards, AWS keys, JWT tokens, street addresses,
 IBANs, UK National Insurance numbers, EU VAT IDs, India Aadhaar numbers, China resident IDs, and
 custom regex patterns supplied via the `--custom-patterns` JSON flag. Scan only selected types with
-`--include-sensitive-data-types` or skip some with `--exclude-sensitive-data-types`.
-Safnari also reports system details such as
-running processes. The goal of this documentation is to provide deeper
-explanations and examples than the top level README.
+`--include-sensitive-data-types` or skip some with `--exclude-sensitive-data-types`. Safnari also
+reports system details such as running processes. File metadata collection, system information
+gathering, process enumeration, and sensitive data scanning can be enabled independently. The goal
+of this documentation is to provide deeper explanations and examples than the top level README.
 
 ## Building
 
@@ -75,7 +75,9 @@ Safnari accepts the following flags. Each description lists the default value in
 - `--path`: Comma-separated list of start paths to scan (default: `.`).
 - `--all-drives`: Scan all local drives (Windows only) (default: `false`).
 - `--scan-files`: Enable file scanning (default: `true`).
+- `--scan-sensitive`: Enable sensitive data scanning (default: `true`).
 - `--scan-processes`: Enable process scanning (default: `true`).
+- `--collect-system-info`: Collect system information (default: `true`).
 - `--format`: Output format: json or csv (default: `json`).
 - `--output`: Output file name (default: `safnari-<timestamp>-<unix>.json`).
 - `--concurrency`: Concurrency level (default: number of logical CPUs).

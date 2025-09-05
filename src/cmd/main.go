@@ -52,10 +52,13 @@ func main() {
 		StartTime: startTime.Format(time.RFC3339),
 	}
 
-	// Gather system information
-	sysInfo, err := systeminfo.GetSystemInfo(cfg)
-	if err != nil {
-		logger.Errorf("Failed to gather system information: %v", err)
+	// Gather system information if requested
+	var sysInfo *systeminfo.SystemInfo
+	if cfg.CollectSystemInfo || cfg.ScanProcesses {
+		sysInfo, err = systeminfo.GetSystemInfo(cfg)
+		if err != nil {
+			logger.Errorf("Failed to gather system information: %v", err)
+		}
 	}
 
 	// Prepare output
@@ -74,9 +77,11 @@ func main() {
 	go handleSignals(cancel, &metrics, writer)
 
 	// Start scanning
-	err = scanner.ScanFiles(ctx, cfg, &metrics, writer)
-	if err != nil {
-		logger.Fatalf("Scanning failed: %v", err)
+	if cfg.ScanFiles || cfg.ScanSensitive {
+		err = scanner.ScanFiles(ctx, cfg, &metrics, writer)
+		if err != nil {
+			logger.Fatalf("Scanning failed: %v", err)
+		}
 	}
 
 	// Record end time

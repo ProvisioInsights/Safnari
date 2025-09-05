@@ -22,6 +22,26 @@ func TestGetSystemInfo(t *testing.T) {
 	}
 }
 
+func TestGetSystemInfoProcessFlag(t *testing.T) {
+	cfg := &config.Config{ScanProcesses: true}
+	info, err := GetSystemInfo(cfg)
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if len(info.RunningProcesses) == 0 {
+		t.Fatal("expected running processes when enabled")
+	}
+
+	cfg = &config.Config{CollectSystemInfo: true, ScanProcesses: false}
+	info, err = GetSystemInfo(cfg)
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if len(info.RunningProcesses) != 0 {
+		t.Fatal("expected no running processes when disabled")
+	}
+}
+
 func TestGatherRunningProcesses(t *testing.T) {
 	sys := &SystemInfo{}
 	if err := gatherRunningProcesses(sys, false); err != nil {

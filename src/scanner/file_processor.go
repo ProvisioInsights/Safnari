@@ -14,6 +14,7 @@ import (
 	"safnari/metadata"
 	"safnari/output"
 	"safnari/tracing"
+	"safnari/utils"
 
 	"github.com/djherbis/times"
 	"github.com/h2non/filetype"
@@ -28,6 +29,10 @@ func ProcessFile(ctx context.Context, path string, cfg *config.Config, w *output
 	case <-ctx.Done():
 		return
 	default:
+	}
+	if !utils.IsPathWithin(path, cfg.StartPaths) {
+		logger.Warnf("Skipping file outside target paths: %s", path)
+		return
 	}
 
 	fileInfo, err := os.Stat(path)
@@ -52,63 +57,59 @@ func ProcessFile(ctx context.Context, path string, cfg *config.Config, w *output
 		logger.Warnf("Failed to process file %s: %v", path, err)
 		return
 	}
-	w.WriteData(fileData)
+	if cfg.ScanFiles || (cfg.ScanSensitive && fileData["sensitive_data"] != nil) {
+		w.WriteData(fileData)
+	}
 }
 
 func collectFileData(path string, fileInfo os.FileInfo, cfg *config.Config, sensitivePatterns map[string]*regexp.Regexp) (map[string]interface{}, error) {
 	data := make(map[string]interface{})
 	data["path"] = path
-	data["name"] = fileInfo.Name()
-	data["size"] = fileInfo.Size()
-	data["mod_time"] = fileInfo.ModTime().Format(time.RFC3339)
 
-	// Get access and creation times using times package
-	t, err := times.Stat(path)
-	if err == nil {
-		if t.HasBirthTime() {
-			data["creation_time"] = t.BirthTime().Format(time.RFC3339)
+	if cfg.ScanFiles {
+		data["name"] = fileInfo.Name()
+		data["size"] = fileInfo.Size()
+		data["mod_time"] = fileInfo.ModTime().Format(time.RFC3339)
+
+		t, err := times.Stat(path)
+		if err == nil {
+			if t.HasBirthTime() {
+				data["creation_time"] = t.BirthTime().Format(time.RFC3339)
+			} else {
+				data["creation_time"] = ""
+			}
+			data["access_time"] = t.AccessTime().Format(time.RFC3339)
+			data["change_time"] = t.ChangeTime().Format(time.RFC3339)
 		} else {
 			data["creation_time"] = ""
+			data["access_time"] = ""
+			data["change_time"] = ""
 		}
-		data["access_time"] = t.AccessTime().Format(time.RFC3339)
-		data["change_time"] = t.ChangeTime().Format(time.RFC3339)
-	} else {
-		data["creation_time"] = ""
-		data["access_time"] = ""
-		data["change_time"] = ""
+
+		data["attributes"] = getFileAttributes(fileInfo)
+		data["permissions"] = fileInfo.Mode().Perm().String()
+
+		owner, err := getFileOwnership(path)
+		if err == nil {
+			data["owner"] = owner
+		} else {
+			data["owner"] = ""
+		}
 	}
 
-	// Get file attributes
-	data["attributes"] = getFileAttributes(fileInfo)
-
-	// Get file permissions
-	data["permissions"] = fileInfo.Mode().Perm().String()
-
-	// Get file owner
-	owner, err := getFileOwnership(path)
-	if err == nil {
-		data["owner"] = owner
-	} else {
-		data["owner"] = ""
-	}
-
-	// Determine MIME type
 	mimeType, err := getMimeType(path)
 	if err != nil {
 		mimeType = "unknown"
 	}
-	data["mime_type"] = mimeType
+	if cfg.ScanFiles {
+		data["mime_type"] = mimeType
+		hashes := hasher.ComputeHashes(path, cfg.HashAlgorithms)
+		data["hashes"] = hashes
+		meta := metadata.ExtractMetadata(path, mimeType)
+		data["metadata"] = meta
+	}
 
-	// Compute hashes
-	hashes := hasher.ComputeHashes(path, cfg.HashAlgorithms)
-	data["hashes"] = hashes
-
-	// Extract metadata if applicable
-	meta := metadata.ExtractMetadata(path, mimeType)
-	data["metadata"] = meta
-
-	// Sensitive Data Scanning
-	if shouldSearchContent(mimeType) && len(sensitivePatterns) > 0 {
+	if cfg.ScanSensitive && len(sensitivePatterns) > 0 && shouldSearchContent(mimeType) {
 		matches := scanForSensitiveData(path, sensitivePatterns)
 		if len(matches) > 0 {
 			data["sensitive_data"] = matches
