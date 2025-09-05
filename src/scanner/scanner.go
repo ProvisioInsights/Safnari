@@ -3,8 +3,10 @@ package scanner
 import (
 	"context"
 	"io/fs"
+	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"sync"
 	"time"
 
@@ -18,6 +20,23 @@ import (
 )
 
 func ScanFiles(ctx context.Context, cfg *config.Config, metrics *output.Metrics, w *output.Writer) error {
+	var lastScanTime time.Time
+	if cfg.LastScanTime != "" {
+		t, err := time.Parse(time.RFC3339, cfg.LastScanTime)
+		if err == nil {
+			lastScanTime = t
+		} else {
+			logger.Warnf("Invalid last scan time: %v", err)
+		}
+	} else if cfg.DeltaScan && cfg.LastScanFile != "" {
+		data, err := os.ReadFile(cfg.LastScanFile)
+		if err == nil {
+			t, err := time.Parse(time.RFC3339, strings.TrimSpace(string(data)))
+			if err == nil {
+				lastScanTime = t
+			}
+		}
+	}
 	// If cfg.AllDrives is true, get all local drives
 	if cfg.AllDrives {
 		drives, err := utils.GetLocalDrives()
@@ -31,7 +50,7 @@ func ScanFiles(ctx context.Context, cfg *config.Config, metrics *output.Metrics,
 	logger.Info("Counting total number of files...")
 	totalFiles := 0
 	for _, startPath := range cfg.StartPaths {
-		count, err := countTotalFiles(startPath, cfg)
+		count, err := countTotalFiles(startPath, cfg, lastScanTime)
 		if err != nil {
 			logger.Warnf("Failed to count files in %s: %v", startPath, err)
 			continue
@@ -74,6 +93,12 @@ func ScanFiles(ctx context.Context, cfg *config.Config, metrics *output.Metrics,
 
 				// Apply include/exclude filters
 				if utils.ShouldInclude(path, cfg.IncludePatterns, cfg.ExcludePatterns) {
+					if cfg.DeltaScan && !d.IsDir() {
+						info, err := d.Info()
+						if err == nil && info.ModTime().Before(lastScanTime) {
+							return nil
+						}
+					}
 					select {
 					case <-ctx.Done():
 						return ctx.Err()
@@ -111,10 +136,15 @@ func ScanFiles(ctx context.Context, cfg *config.Config, metrics *output.Metrics,
 	}
 
 	wg.Wait()
+	if cfg.DeltaScan && cfg.LastScanFile != "" {
+		if err := os.WriteFile(cfg.LastScanFile, []byte(time.Now().UTC().Format(time.RFC3339)), 0644); err != nil {
+			logger.Warnf("Failed to write last scan time: %v", err)
+		}
+	}
 	return nil
 }
 
-func countTotalFiles(startPath string, cfg *config.Config) (int, error) {
+func countTotalFiles(startPath string, cfg *config.Config, lastScanTime time.Time) (int, error) {
 	var total int
 	err := filepath.WalkDir(startPath, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
@@ -122,6 +152,12 @@ func countTotalFiles(startPath string, cfg *config.Config) (int, error) {
 			return nil
 		}
 		if !d.IsDir() && utils.ShouldInclude(path, cfg.IncludePatterns, cfg.ExcludePatterns) {
+			if cfg.DeltaScan {
+				info, err := d.Info()
+				if err == nil && info.ModTime().Before(lastScanTime) {
+					return nil
+				}
+			}
 			total++
 		}
 		return nil

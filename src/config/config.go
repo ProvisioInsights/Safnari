@@ -34,6 +34,9 @@ type Config struct {
 	ExtendedProcessInfo bool     `json:"extended_process_info"`
 	SensitiveDataTypes  []string `json:"sensitive_data_types"`
 	FuzzyHash           bool     `json:"fuzzy_hash"`
+	DeltaScan           bool     `json:"delta_scan"`
+	LastScanFile        string   `json:"last_scan_file"`
+	LastScanTime        string   `json:"last_scan_time"`
 }
 
 func LoadConfig() (*Config, error) {
@@ -54,6 +57,8 @@ func LoadConfig() (*Config, error) {
 		LogLevel:           "info",
 		MaxIOPerSecond:     1000,
 		SensitiveDataTypes: []string{},
+		DeltaScan:          false,
+		LastScanFile:       ".safnari_last_scan",
 	}
 
 	startPath := flag.String("path", strings.Join(cfg.StartPaths, ","), "Start path(s) for scanning (comma-separated)")
@@ -76,6 +81,9 @@ func LoadConfig() (*Config, error) {
 	extendedProcessInfo := flag.Bool("extended-process-info", cfg.ExtendedProcessInfo, "Gather extended process information (requires elevated privileges)")
 	sensitiveDataTypes := flag.String("sensitive-data-types", "", "Sensitive data types to scan for (comma-separated)")
 	fuzzyHash := flag.Bool("fuzzy-hash", cfg.FuzzyHash, "Enable fuzzy hashing (ssdeep)")
+	deltaScan := flag.Bool("delta-scan", cfg.DeltaScan, "Only scan files modified since the last run")
+	lastScanFile := flag.String("last-scan-file", cfg.LastScanFile, "Path to timestamp file for delta scans")
+	lastScanTime := flag.String("last-scan", cfg.LastScanTime, "Timestamp of last scan in RFC3339 format (e.g. 2006-01-02T15:04:05Z)")
 	showVersion := flag.Bool("version", false, "Print version and exit")
 
 	flag.Usage = displayHelp
@@ -133,6 +141,12 @@ func LoadConfig() (*Config, error) {
 			cfg.SensitiveDataTypes = parseCommaSeparated(*sensitiveDataTypes)
 		case "fuzzy-hash":
 			cfg.FuzzyHash = *fuzzyHash
+		case "delta-scan":
+			cfg.DeltaScan = *deltaScan
+		case "last-scan-file":
+			cfg.LastScanFile = *lastScanFile
+		case "last-scan":
+			cfg.LastScanTime = *lastScanTime
 		}
 	})
 
@@ -205,6 +219,14 @@ func (cfg *Config) validate() error {
 	if cfg.LogLevel != "debug" && cfg.LogLevel != "info" && cfg.LogLevel != "warn" &&
 		cfg.LogLevel != "error" && cfg.LogLevel != "fatal" && cfg.LogLevel != "panic" {
 		return fmt.Errorf("invalid log level: %s", cfg.LogLevel)
+	}
+	if cfg.DeltaScan && cfg.LastScanFile == "" && cfg.LastScanTime == "" {
+		return fmt.Errorf("either last scan file or last scan time must be specified when delta scanning is enabled")
+	}
+	if cfg.LastScanTime != "" {
+		if _, err := time.Parse(time.RFC3339, cfg.LastScanTime); err != nil {
+			return fmt.Errorf("invalid last scan time format: %v", err)
+		}
 	}
 	return nil
 }

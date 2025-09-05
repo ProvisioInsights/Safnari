@@ -3,8 +3,10 @@ package scanner
 import (
 	"context"
 	"os"
+	"path/filepath"
 	"runtime"
 	"testing"
+	"time"
 
 	"safnari/config"
 	"safnari/logger"
@@ -126,9 +128,64 @@ func TestCountTotalFiles(t *testing.T) {
 	os.WriteFile(dir+"/a.txt", []byte("a"), 0644)
 	os.WriteFile(dir+"/b.txt", []byte("b"), 0644)
 	cfg := &config.Config{}
-	count, err := countTotalFiles(dir, cfg)
+	count, err := countTotalFiles(dir, cfg, time.Time{})
 	if err != nil || count != 2 {
 		t.Fatalf("count: %v %d", err, count)
+	}
+}
+
+func TestCountTotalFilesDelta(t *testing.T) {
+	dir := t.TempDir()
+	os.WriteFile(dir+"/a.txt", []byte("a"), 0644)
+	time.Sleep(1 * time.Second)
+	last := time.Now()
+	time.Sleep(1 * time.Second)
+	os.WriteFile(dir+"/b.txt", []byte("b"), 0644)
+	cfg := &config.Config{DeltaScan: true}
+	count, err := countTotalFiles(dir, cfg, last)
+	if err != nil || count != 1 {
+		t.Fatalf("delta count: %v %d", err, count)
+	}
+}
+
+func TestScanFilesLastScanTime(t *testing.T) {
+	dir := t.TempDir()
+	scanDir := filepath.Join(dir, "scan")
+	os.Mkdir(scanDir, 0755)
+	oldPath := filepath.Join(scanDir, "old.txt")
+	os.WriteFile(oldPath, []byte("old"), 0644)
+	time.Sleep(1 * time.Second)
+	last := time.Now().UTC()
+	time.Sleep(1 * time.Second)
+	newPath := filepath.Join(scanDir, "new.txt")
+	os.WriteFile(newPath, []byte("new"), 0644)
+
+	outFile := filepath.Join(dir, "out.json")
+	cfg := &config.Config{
+		StartPaths:     []string{scanDir},
+		OutputFileName: outFile,
+		DeltaScan:      true,
+		LastScanTime:   last.Format(time.RFC3339),
+		LastScanFile:   "",
+		NiceLevel:      "low",
+		MaxIOPerSecond: 1000,
+		ScanFiles:      true,
+		MaxFileSize:    1024,
+	}
+	sys := &systeminfo.SystemInfo{RunningProcesses: []systeminfo.ProcessInfo{}}
+	metrics := &output.Metrics{}
+	w, err := output.New(cfg, sys, metrics)
+	if err != nil {
+		t.Fatalf("output init: %v", err)
+	}
+	defer w.Close()
+
+	ctx := context.Background()
+	if err := ScanFiles(ctx, cfg, metrics, w); err != nil {
+		t.Fatalf("scan: %v", err)
+	}
+	if metrics.FilesProcessed != 1 {
+		t.Fatalf("expected 1 file processed got %d", metrics.FilesProcessed)
 	}
 }
 

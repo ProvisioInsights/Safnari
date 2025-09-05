@@ -62,6 +62,11 @@ Common flags include:
 - `--search`: Search string or regular expression to look for in file contents.
 - `--output`: Output filename. Defaults to a timestamped JSON file.
 - `--concurrency`: Number of worker goroutines. Defaults to the number of logical CPUs.
+- `--delta-scan`: Skip files not modified since the last run. Timestamp is stored in
+  `.safnari_last_scan`.
+- `--last-scan-file`: Path to an alternate timestamp file used with `--delta-scan`.
+- `--last-scan`: Timestamp of the previous scan in RFC3339 format (e.g.
+  `2006-01-02T15:04:05Z`) used with `--delta-scan`.
 
 See `./bin/safnari --help` for a complete list of flags.
 
