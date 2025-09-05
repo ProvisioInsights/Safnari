@@ -123,6 +123,16 @@ func TestExcludeSensitiveDataTypes(t *testing.T) {
 	}
 }
 
+func TestExcludeOnlyDefaultsToAll(t *testing.T) {
+	patterns := GetPatterns(nil, nil, []string{"email"})
+	if _, ok := patterns["email"]; ok {
+		t.Fatal("email should have been excluded")
+	}
+	if _, ok := patterns["credit_card"]; !ok {
+		t.Fatal("expected credit card pattern when only exclude specified")
+	}
+}
+
 func TestGetFileAttributes(t *testing.T) {
 	tmp, _ := os.CreateTemp("", "attr")
 	tmp.Close()

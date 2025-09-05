@@ -18,9 +18,13 @@ func TestParseCommaSeparated(t *testing.T) {
 }
 
 func TestParseCustomPatterns(t *testing.T) {
-	res := parseCustomPatterns("a:1+,b:2?")
+	res := parseCustomPatterns(`{"a":"1+","b":"2?"}`)
 	if res["a"] != "1+" || res["b"] != "2?" {
 		t.Fatalf("unexpected result: %v", res)
+	}
+	res = parseCustomPatterns(`{"ipv6":"[a-fA-F0-9:]{2,}"}`)
+	if res["ipv6"] != "[a-fA-F0-9:]{2,}" {
+		t.Fatalf("failed to parse complex regex: %v", res["ipv6"])
 	}
 	if res := parseCustomPatterns(""); len(res) != 0 {
 		t.Fatalf("expected empty map")

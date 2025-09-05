@@ -14,8 +14,8 @@ This directory contains extended documentation for Safnari.
 
 Safnari collects file metadata and system information from user specified paths. It can hash files,
 search for sensitive strings such as emails, credit cards, AWS keys, JWT tokens, street addresses,
-IBANs, UK National Insurance numbers, EU VAT IDs, India Aadhaar numbers,
-China resident IDs, and custom regex patterns. Scan only selected types with
+IBANs, UK National Insurance numbers, EU VAT IDs, India Aadhaar numbers, China resident IDs, and
+custom regex patterns supplied via the `--custom-patterns` JSON flag. Scan only selected types with
 `--include-sensitive-data-types` or skip some with `--exclude-sensitive-data-types`.
 Safnari also reports system details such as
 running processes. The goal of this documentation is to provide deeper
@@ -96,14 +96,18 @@ Safnari accepts the following flags. Each description lists the default value in
   to include when scanning. Use `all` to include all built-in patterns (default: none).
 - `--exclude-sensitive-data-types`: Comma-separated list of sensitive data types
   to skip when scanning (default: none).
-- `--custom-patterns`: Custom sensitive data patterns as name:regex pairs
-  (default: none).
+- `--custom-patterns`: Custom sensitive data patterns as a JSON object mapping
+  names to regexes (default: none).
 - `--fuzzy-hash`: Enable fuzzy hashing (ssdeep) (default: `false`).
 - `--delta-scan`: Only scan files modified since the last run (default: `false`).
 - `--last-scan-file`: Path to timestamp file for delta scans (default: `.safnari_last_scan`).
 - `--last-scan`: Timestamp of last scan in RFC3339 format (e.g.,
   `2006-01-02T15:04:05Z`) (default: none).
 - `--version`: Print version and exit.
+
+If only `--exclude-sensitive-data-types` is provided, Safnari scans all built-in
+patterns except those excluded. When both include and exclude flags are set, the
+exclusion list removes types from the inclusion list.
 
 See `./bin/safnari --help` for detailed usage information.
 

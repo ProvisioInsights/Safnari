@@ -88,7 +88,7 @@ func LoadConfig() (*Config, error) {
 	extendedProcessInfo := flag.Bool("extended-process-info", cfg.ExtendedProcessInfo, fmt.Sprintf("Gather extended process information (requires elevated privileges) (default: %t).", cfg.ExtendedProcessInfo))
 	includeDataTypes := flag.String("include-sensitive-data-types", "", "Comma-separated list of sensitive data types to include when scanning (default: none). Use 'all' to include all built-in types.")
 	excludeDataTypes := flag.String("exclude-sensitive-data-types", "", "Comma-separated list of sensitive data types to exclude when scanning.")
-	customPatterns := flag.String("custom-patterns", "", "Custom sensitive data patterns in the format name:regex,...")
+	customPatterns := flag.String("custom-patterns", "", "Custom sensitive data patterns as a JSON object mapping names to regexes")
 	fuzzyHash := flag.Bool("fuzzy-hash", cfg.FuzzyHash, fmt.Sprintf("Enable fuzzy hashing (ssdeep) (default: %t).", cfg.FuzzyHash))
 	deltaScan := flag.Bool("delta-scan", cfg.DeltaScan, fmt.Sprintf("Only scan files modified since the last run (default: %t).", cfg.DeltaScan))
 	lastScanFile := flag.String("last-scan-file", cfg.LastScanFile, fmt.Sprintf("Path to timestamp file for delta scans (default: %s).", cfg.LastScanFile))
@@ -262,16 +262,9 @@ func parseCustomPatterns(input string) map[string]string {
 	if input == "" {
 		return patterns
 	}
-	pairs := strings.Split(input, ",")
-	for _, p := range pairs {
-		parts := strings.SplitN(p, ":", 2)
-		if len(parts) == 2 {
-			name := strings.TrimSpace(parts[0])
-			regex := strings.TrimSpace(parts[1])
-			if name != "" && regex != "" {
-				patterns[name] = regex
-			}
-		}
+	if err := json.Unmarshal([]byte(input), &patterns); err != nil {
+		fmt.Fprintf(os.Stderr, "invalid custom patterns: %v\n", err)
+		return map[string]string{}
 	}
 	return patterns
 }

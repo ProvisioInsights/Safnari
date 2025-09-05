@@ -12,7 +12,7 @@ configuration flags for filtering, hashing, and output control.
 - Scan files across specified paths or all drives
 - Calculate file hashes (MD5, SHA1, SHA256)
 - Extract metadata from images (EXIF), PDFs, and DOCX documents
- - Detect sensitive data patterns such as emails, credit cards (with Luhn validation), AWS keys, JWT tokens, street addresses, IBANs, UK National Insurance numbers, EU VAT IDs, India Aadhaar numbers, China resident IDs, and user-defined regexes. Users can scan only selected types with `--include-sensitive-data-types` or skip some with `--exclude-sensitive-data-types`.
+ - Detect sensitive data patterns such as emails, credit cards (with Luhn validation), AWS keys, JWT tokens, street addresses, IBANs, UK National Insurance numbers, EU VAT IDs, India Aadhaar numbers, China resident IDs, and user-defined regexes via the `--custom-patterns` JSON flag. Users can scan only selected types with `--include-sensitive-data-types` or skip some with `--exclude-sensitive-data-types`.
 - Output results with metrics in JSON format
 
 ## Installation
@@ -74,6 +74,11 @@ the current working directory using a concurrency level equal to the number of
 logical CPUs. It does not search for any strings or sensitive data types unless
 explicitly requested and writes results to a timestamped file named
 `safnari-<human-readable>-<unix>.json`.
+
+If only `--exclude-sensitive-data-types` is supplied, Safnari scans all built-in patterns except
+those excluded. When both include and exclude lists are provided, the exclusion list removes types
+from the inclusion list. Custom regex patterns can be added with `--custom-patterns` using a JSON
+object mapping names to regexes.
 
 ### Default flags
 
