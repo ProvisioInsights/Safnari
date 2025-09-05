@@ -73,7 +73,7 @@ func TestWriteDataConcurrent(t *testing.T) {
 	}
 
 	var wg sync.WaitGroup
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
@@ -87,7 +87,7 @@ func TestWriteDataConcurrent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read: %v", err)
 	}
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		if !strings.Contains(string(content), "\"path\": "+strconv.Itoa(i)) {
 			t.Fatalf("missing entry %d", i)
 		}

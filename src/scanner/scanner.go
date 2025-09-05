@@ -118,7 +118,7 @@ func ScanFiles(ctx context.Context, cfg *config.Config, metrics *output.Metrics,
 	}()
 
 	// Start worker pool
-	for i := 0; i < cfg.ConcurrencyLevel; i++ {
+	for range cfg.ConcurrencyLevel {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
