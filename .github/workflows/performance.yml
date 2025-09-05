@@ -1,0 +1,34 @@
+name: Performance
+
+on:
+  push:
+    branches: [main]
+    tags: ['*']
+  pull_request:
+
+jobs:
+  benchmark:
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            goos: linux
+            goarch: amd64
+          - os: macos-latest
+            goos: darwin
+            goarch: amd64
+          - os: windows-latest
+            goos: windows
+            goarch: amd64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v4
+        with:
+          go-version: '1.22'
+      - run: go test -run=^$ -bench=. -benchmem ./... | tee benchmark.txt
+        working-directory: src
+      - uses: actions/upload-artifact@v4
+        with:
+          name: benchmarks-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: src/benchmark.txt
