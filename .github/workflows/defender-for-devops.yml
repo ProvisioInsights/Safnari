@@ -26,10 +26,17 @@ on:
   schedule:
     - cron: '22 7 * * 5'
 
+permissions:
+  contents: read
+
 jobs:
   MSDO:
     # currently only windows latest is supported
     runs-on: windows-latest
+    permissions:
+      contents: read
+      security-events: write
+      id-token: write
 
     steps:
     - uses: actions/checkout@v4
