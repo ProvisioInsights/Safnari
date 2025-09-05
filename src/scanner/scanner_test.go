@@ -62,10 +62,74 @@ func TestScanForSensitiveData(t *testing.T) {
 	tmp.WriteString(content)
 	tmp.Close()
 	defer os.Remove(tmp.Name())
-	patterns := GetPatterns([]string{"email"})
+	patterns := GetPatterns([]string{"email"}, nil, nil)
 	matches := scanForSensitiveData(tmp.Name(), patterns)
 	if len(matches["email"]) == 0 {
 		t.Fatal("expected email match")
+	}
+}
+
+func TestScanForSensitiveDataCreditCard(t *testing.T) {
+	tmp, _ := os.CreateTemp("", "cc*.txt")
+	content := "valid 4111-1111-1111-1111 invalid 1234-5678-9012-3456"
+	tmp.WriteString(content)
+	tmp.Close()
+	defer os.Remove(tmp.Name())
+	patterns := GetPatterns([]string{"credit_card"}, nil, nil)
+	matches := scanForSensitiveData(tmp.Name(), patterns)
+	if len(matches["credit_card"]) != 1 || matches["credit_card"][0] != "4111-1111-1111-1111" {
+		t.Fatalf("expected valid credit card match, got %v", matches["credit_card"])
+	}
+}
+
+func TestCustomSensitivePattern(t *testing.T) {
+	tmp, _ := os.CreateTemp("", "custom*.txt")
+	tmp.WriteString("token abc123")
+	tmp.Close()
+	defer os.Remove(tmp.Name())
+	custom := map[string]string{"token": "abc\\d+"}
+	patterns := GetPatterns([]string{"token"}, custom, nil)
+	matches := scanForSensitiveData(tmp.Name(), patterns)
+	if len(matches["token"]) == 0 {
+		t.Fatal("expected custom pattern match")
+	}
+}
+
+func TestInternationalSensitivePatterns(t *testing.T) {
+	tmp, _ := os.CreateTemp("", "intl*.txt")
+	content := "IBAN GB29NWBK60161331926819 Aadhaar 1234 5678 9012"
+	tmp.WriteString(content)
+	tmp.Close()
+	defer os.Remove(tmp.Name())
+	patterns := GetPatterns([]string{"iban", "india_aadhaar"}, nil, nil)
+	matches := scanForSensitiveData(tmp.Name(), patterns)
+	if len(matches["iban"]) == 0 || len(matches["india_aadhaar"]) == 0 {
+		t.Fatal("expected international pattern matches")
+	}
+}
+
+func TestExcludeSensitiveDataTypes(t *testing.T) {
+	tmp, _ := os.CreateTemp("", "exclude*.txt")
+	tmp.WriteString("test@example.com 4111-1111-1111-1111")
+	tmp.Close()
+	defer os.Remove(tmp.Name())
+	patterns := GetPatterns([]string{"email", "credit_card"}, nil, []string{"email"})
+	matches := scanForSensitiveData(tmp.Name(), patterns)
+	if _, ok := matches["email"]; ok {
+		t.Fatal("email should have been excluded")
+	}
+	if len(matches["credit_card"]) == 0 {
+		t.Fatal("expected credit card match")
+	}
+}
+
+func TestExcludeOnlyDefaultsToAll(t *testing.T) {
+	patterns := GetPatterns(nil, nil, []string{"email"})
+	if _, ok := patterns["email"]; ok {
+		t.Fatal("email should have been excluded")
+	}
+	if _, ok := patterns["credit_card"]; !ok {
+		t.Fatal("expected credit card pattern when only exclude specified")
 	}
 }
 
@@ -88,7 +152,7 @@ func TestCollectFileData(t *testing.T) {
 	defer os.Remove(tmp.Name())
 	fi, _ := os.Stat(tmp.Name())
 	cfg := &config.Config{HashAlgorithms: []string{"md5"}, MaxFileSize: 1024}
-	patterns := GetPatterns([]string{"email"})
+	patterns := GetPatterns([]string{"email"}, nil, nil)
 	data, err := collectFileData(tmp.Name(), fi, cfg, patterns)
 	if err != nil {
 		t.Fatalf("collect: %v", err)
@@ -118,7 +182,7 @@ func TestProcessFile(t *testing.T) {
 	}
 	defer w.Close()
 
-	patterns := GetPatterns([]string{"email"})
+	patterns := GetPatterns([]string{"email"}, nil, nil)
 	ctx := context.Background()
 	ProcessFile(ctx, tmp.Name(), cfg, w, patterns)
 }

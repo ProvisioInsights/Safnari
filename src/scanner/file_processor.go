@@ -173,6 +173,28 @@ func shouldSearchContent(mimeType string) bool {
 		strings.Contains(mimeType, "javascript")
 }
 
+func luhnValid(number string) bool {
+	num := strings.ReplaceAll(number, " ", "")
+	num = strings.ReplaceAll(num, "-", "")
+	if len(num) < 13 || len(num) > 16 {
+		return false
+	}
+	var sum int
+	alt := false
+	for i := len(num) - 1; i >= 0; i-- {
+		d := int(num[i] - '0')
+		if alt {
+			d *= 2
+			if d > 9 {
+				d -= 9
+			}
+		}
+		sum += d
+		alt = !alt
+	}
+	return sum%10 == 0
+}
+
 func scanForSensitiveData(path string, patterns map[string]*regexp.Regexp) map[string][]string {
 	matches := make(map[string][]string)
 
@@ -204,6 +226,15 @@ func scanForSensitiveData(path string, patterns map[string]*regexp.Regexp) map[s
 	textContent := string(content)
 	for dataType, pattern := range patterns {
 		found := pattern.FindAllString(textContent, -1)
+		if dataType == "credit_card" {
+			filtered := []string{}
+			for _, f := range found {
+				if luhnValid(f) {
+					filtered = append(filtered, f)
+				}
+			}
+			found = filtered
+		}
 		if len(found) > 0 {
 			matches[dataType] = found
 		}

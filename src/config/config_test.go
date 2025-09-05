@@ -17,6 +17,20 @@ func TestParseCommaSeparated(t *testing.T) {
 	}
 }
 
+func TestParseCustomPatterns(t *testing.T) {
+	res := parseCustomPatterns(`{"a":"1+","b":"2?"}`)
+	if res["a"] != "1+" || res["b"] != "2?" {
+		t.Fatalf("unexpected result: %v", res)
+	}
+	res = parseCustomPatterns(`{"ipv6":"[a-fA-F0-9:]{2,}"}`)
+	if res["ipv6"] != "[a-fA-F0-9:]{2,}" {
+		t.Fatalf("failed to parse complex regex: %v", res["ipv6"])
+	}
+	if res := parseCustomPatterns(""); len(res) != 0 {
+		t.Fatalf("expected empty map")
+	}
+}
+
 func TestLoadFromFile(t *testing.T) {
 	tmp, err := os.CreateTemp("", "cfg*.json")
 	if err != nil {
@@ -95,5 +109,22 @@ func TestFuzzyHashFlagAddsAlgorithm(t *testing.T) {
 	}
 	if !found {
 		t.Fatal("ssdeep algorithm not added")
+	}
+}
+
+func TestIncludeSensitiveFlag(t *testing.T) {
+	oldArgs := os.Args
+	defer func() { os.Args = oldArgs }()
+	oldFlag := flag.CommandLine
+	flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ExitOnError)
+	defer func() { flag.CommandLine = oldFlag }()
+
+	os.Args = []string{"cmd", "--include-sensitive-data-types", "email,credit_card", "--exclude-sensitive-data-types", "email"}
+	cfg, err := LoadConfig()
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if len(cfg.IncludeDataTypes) != 2 || len(cfg.ExcludeDataTypes) != 1 || cfg.ExcludeDataTypes[0] != "email" {
+		t.Fatalf("unexpected cfg: %+v", cfg)
 	}
 }
