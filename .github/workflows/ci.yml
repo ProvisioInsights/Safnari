@@ -22,7 +22,9 @@ jobs:
       - name: Run govulncheck
         run: |
           go install golang.org/x/vuln/cmd/govulncheck@latest
-          GOEXPERIMENT=jsonv2 govulncheck -tags jsonv2 ./...
+          # govulncheck panics with GOEXPERIMENT=jsonv2 as of current toolchain.
+          # Run without jsonv2 tags to keep vulnerability scanning functional.
+          govulncheck ./...
         working-directory: src
 
   build:
