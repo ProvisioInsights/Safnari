@@ -6,9 +6,11 @@ import (
 	"context"
 	"os"
 	"runtime/trace"
+	"time"
 )
 
 var traceFile *os.File
+var flightRecorder *trace.FlightRecorder
 
 // Start enables runtime tracing and writes trace data to trace.out.
 func Start() error {
@@ -45,4 +47,36 @@ func StartRegion(ctx context.Context, name string) func() {
 // Log adds a trace event with the provided category and message.
 func Log(ctx context.Context, category, message string) {
 	trace.Log(ctx, category, message)
+}
+
+// StartFlightRecorder enables the in-memory flight recorder.
+func StartFlightRecorder(maxBytes uint64, minAge time.Duration) error {
+	cfg := trace.FlightRecorderConfig{
+		MaxBytes: maxBytes,
+		MinAge:   minAge,
+	}
+	flightRecorder = trace.NewFlightRecorder(cfg)
+	return flightRecorder.Start()
+}
+
+// StopFlightRecorder stops the flight recorder if it is running.
+func StopFlightRecorder() {
+	if flightRecorder != nil {
+		flightRecorder.Stop()
+		flightRecorder = nil
+	}
+}
+
+// WriteFlightRecorder writes the current flight recorder window to the given path.
+func WriteFlightRecorder(path string) error {
+	if flightRecorder == nil || !flightRecorder.Enabled() {
+		return nil
+	}
+	f, err := os.Create(path)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	_, err = flightRecorder.WriteTo(f)
+	return err
 }

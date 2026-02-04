@@ -34,7 +34,8 @@ func checkForUpdateURL(current, url string) (string, string, bool, error) {
 		return "", "", false, err
 	}
 	latest := strings.TrimPrefix(info.TagName, "v")
-	if latest != current {
+	currentClean := strings.TrimPrefix(current, "v")
+	if latest != currentClean {
 		return latest, info.Body, true, nil
 	}
 	return latest, "", false, nil

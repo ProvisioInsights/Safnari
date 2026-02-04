@@ -8,7 +8,6 @@ import (
 	"os"
 	"testing"
 
-	"github.com/glaslos/ssdeep"
 	"safnari/logger"
 )
 
@@ -28,7 +27,7 @@ func TestComputeHashes(t *testing.T) {
 	}
 	tmp.Close()
 
-	hashes := ComputeHashes(tmp.Name(), []string{"md5", "sha1", "sha256", "ssdeep", "unknown"})
+	hashes := ComputeHashes(tmp.Name(), []string{"md5", "sha1", "sha256", "unknown"})
 
 	expectedMD5 := fmt.Sprintf("%x", md5.Sum(data))
 	if hashes["md5"] != expectedMD5 {
@@ -41,16 +40,6 @@ func TestComputeHashes(t *testing.T) {
 	expectedSHA256 := fmt.Sprintf("%x", sha256.Sum256(data))
 	if hashes["sha256"] != expectedSHA256 {
 		t.Errorf("sha256 mismatch: %s", hashes["sha256"])
-	}
-	f, _ := os.Open(tmp.Name())
-	expectedSSDEEP, err := ssdeep.FuzzyFile(f)
-	f.Close()
-	if err == nil {
-		if hashes["ssdeep"] != expectedSSDEEP {
-			t.Errorf("ssdeep mismatch: %s", hashes["ssdeep"])
-		}
-	} else if hashes["ssdeep"] != "" {
-		t.Errorf("expected empty ssdeep on error")
 	}
 	if _, ok := hashes["unknown"]; ok {
 		t.Errorf("unexpected hash for unknown algorithm")

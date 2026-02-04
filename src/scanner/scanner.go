@@ -49,6 +49,8 @@ func ScanFiles(ctx context.Context, cfg *config.Config, metrics *output.Metrics,
 	totalFiles := 0
 	var bar *progressbar.ProgressBar
 
+	matcher := utils.NewPatternMatcher(cfg.IncludePatterns, cfg.ExcludePatterns)
+
 	if cfg.SkipCount {
 		logger.Info("Skipping total file count")
 		bar = progressbar.NewOptions(-1,
@@ -61,7 +63,7 @@ func ScanFiles(ctx context.Context, cfg *config.Config, metrics *output.Metrics,
 		// Display message about initial file count
 		logger.Info("Counting total number of files...")
 		for _, startPath := range cfg.StartPaths {
-			count, err := countTotalFiles(startPath, cfg, lastScanTime)
+			count, err := countTotalFiles(startPath, cfg, lastScanTime, matcher)
 			if err != nil {
 				logger.Warnf("Failed to count files in %s: %v", startPath, err)
 				continue
@@ -81,16 +83,26 @@ func ScanFiles(ctx context.Context, cfg *config.Config, metrics *output.Metrics,
 		)
 	}
 
-	filesChan := make(chan string, cfg.ConcurrencyLevel)
 	var wg sync.WaitGroup
-
-	adjustConcurrency(cfg)
 
 	// Prepare sensitive data patterns
 	sensitivePatterns := GetPatterns(cfg.IncludeDataTypes, cfg.CustomPatterns, cfg.ExcludeDataTypes)
 
 	// Implement I/O rate limiter
-	ioLimiter := rate.NewLimiter(rate.Limit(cfg.MaxIOPerSecond), cfg.MaxIOPerSecond)
+	var ioLimiter *rate.Limiter
+	if cfg.MaxIOPerSecond > 0 {
+		ioLimiter = rate.NewLimiter(rate.Limit(cfg.MaxIOPerSecond), cfg.MaxIOPerSecond)
+	} else if cfg.AutoTune && !cfg.MaxIOSet {
+		ioLimiter = rate.NewLimiter(rate.Inf, 1)
+	}
+
+	if cfg.AutoTune {
+		applyAutoTune(ctx, cfg, ioLimiter)
+	} else {
+		adjustConcurrency(cfg)
+	}
+
+	filesChan := make(chan string, cfg.ConcurrencyLevel)
 
 	// Start the file walking in a separate goroutine
 	go func() {
@@ -102,11 +114,17 @@ func ScanFiles(ctx context.Context, cfg *config.Config, metrics *output.Metrics,
 					return nil
 				}
 
+				if d.IsDir() {
+					return nil
+				}
 				// Apply include/exclude filters
-				if utils.ShouldInclude(path, cfg.IncludePatterns, cfg.ExcludePatterns) {
-					if cfg.DeltaScan && !d.IsDir() {
-						info, err := d.Info()
-						if err == nil && info.ModTime().Before(lastScanTime) {
+				if matcher.ShouldInclude(path) {
+					info, err := d.Info()
+					if err == nil {
+						if cfg.DeltaScan && info.ModTime().Before(lastScanTime) {
+							return nil
+						}
+						if cfg.MaxFileSize > 0 && info.Size() > cfg.MaxFileSize {
 							return nil
 						}
 					}
@@ -115,8 +133,10 @@ func ScanFiles(ctx context.Context, cfg *config.Config, metrics *output.Metrics,
 						return ctx.Err()
 					case filesChan <- path:
 						// Wait for permission from the limiter
-						if err := ioLimiter.Wait(ctx); err != nil {
-							return err
+						if ioLimiter != nil {
+							if err := ioLimiter.Wait(ctx); err != nil {
+								return err
+							}
 						}
 					}
 				}
@@ -148,7 +168,7 @@ func ScanFiles(ctx context.Context, cfg *config.Config, metrics *output.Metrics,
 
 	wg.Wait()
 	if cfg.SkipCount {
-		metrics.TotalFiles = metrics.FilesProcessed
+		metrics.TotalFiles = metrics.FilesScanned
 	}
 	if cfg.DeltaScan && cfg.LastScanFile != "" {
 		if err := os.WriteFile(cfg.LastScanFile, []byte(time.Now().UTC().Format(time.RFC3339)), 0644); err != nil {
@@ -158,17 +178,20 @@ func ScanFiles(ctx context.Context, cfg *config.Config, metrics *output.Metrics,
 	return nil
 }
 
-func countTotalFiles(startPath string, cfg *config.Config, lastScanTime time.Time) (int, error) {
+func countTotalFiles(startPath string, cfg *config.Config, lastScanTime time.Time, matcher *utils.PatternMatcher) (int, error) {
 	var total int
 	err := filepath.WalkDir(startPath, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			logger.Warnf("Failed to access %s: %v", path, err)
 			return nil
 		}
-		if !d.IsDir() && utils.ShouldInclude(path, cfg.IncludePatterns, cfg.ExcludePatterns) {
-			if cfg.DeltaScan {
-				info, err := d.Info()
-				if err == nil && info.ModTime().Before(lastScanTime) {
+		if !d.IsDir() && matcher.ShouldInclude(path) {
+			info, err := d.Info()
+			if err == nil {
+				if cfg.DeltaScan && info.ModTime().Before(lastScanTime) {
+					return nil
+				}
+				if cfg.MaxFileSize > 0 && info.Size() > cfg.MaxFileSize {
 					return nil
 				}
 			}
@@ -180,6 +203,9 @@ func countTotalFiles(startPath string, cfg *config.Config, lastScanTime time.Tim
 }
 
 func adjustConcurrency(cfg *config.Config) {
+	if cfg.ConcurrencySet {
+		return
+	}
 	numCPU := runtime.NumCPU()
 	switch cfg.NiceLevel {
 	case "high":
@@ -192,16 +218,4 @@ func adjustConcurrency(cfg *config.Config) {
 	case "low":
 		cfg.ConcurrencyLevel = 1
 	}
-
-	// Implement dynamic adjustment (simplified)
-	go func() {
-		ticker := time.NewTicker(10 * time.Second)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-ticker.C:
-				// Placeholder for dynamic adjustment logic
-			}
-		}
-	}()
 }

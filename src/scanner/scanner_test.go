@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 	"time"
 
@@ -12,6 +13,7 @@ import (
 	"safnari/logger"
 	"safnari/output"
 	"safnari/systeminfo"
+	"safnari/utils"
 )
 
 func init() {
@@ -48,10 +50,10 @@ func TestGetMimeType(t *testing.T) {
 }
 
 func TestShouldSearchContent(t *testing.T) {
-	if !shouldSearchContent("text/plain") {
+	if !shouldSearchContent("text/plain", "") {
 		t.Fatal("text should search")
 	}
-	if shouldSearchContent("image/png") {
+	if shouldSearchContent("image/png", "") {
 		t.Fatal("image should not search")
 	}
 }
@@ -63,7 +65,8 @@ func TestScanForSensitiveData(t *testing.T) {
 	tmp.Close()
 	defer os.Remove(tmp.Name())
 	patterns := GetPatterns([]string{"email"}, nil, nil)
-	matches := scanForSensitiveData(tmp.Name(), patterns)
+	fileContent, _ := os.ReadFile(tmp.Name())
+	matches := scanForSensitiveData(string(fileContent), patterns)
 	if len(matches["email"]) == 0 {
 		t.Fatal("expected email match")
 	}
@@ -76,7 +79,8 @@ func TestScanForSensitiveDataCreditCard(t *testing.T) {
 	tmp.Close()
 	defer os.Remove(tmp.Name())
 	patterns := GetPatterns([]string{"credit_card"}, nil, nil)
-	matches := scanForSensitiveData(tmp.Name(), patterns)
+	contentBytes, _ := os.ReadFile(tmp.Name())
+	matches := scanForSensitiveData(string(contentBytes), patterns)
 	if len(matches["credit_card"]) != 1 || matches["credit_card"][0] != "4111-1111-1111-1111" {
 		t.Fatalf("expected valid credit card match, got %v", matches["credit_card"])
 	}
@@ -89,7 +93,8 @@ func TestCustomSensitivePattern(t *testing.T) {
 	defer os.Remove(tmp.Name())
 	custom := map[string]string{"token": "abc\\d+"}
 	patterns := GetPatterns([]string{"token"}, custom, nil)
-	matches := scanForSensitiveData(tmp.Name(), patterns)
+	contentBytes, _ := os.ReadFile(tmp.Name())
+	matches := scanForSensitiveData(string(contentBytes), patterns)
 	if len(matches["token"]) == 0 {
 		t.Fatal("expected custom pattern match")
 	}
@@ -102,7 +107,8 @@ func TestInternationalSensitivePatterns(t *testing.T) {
 	tmp.Close()
 	defer os.Remove(tmp.Name())
 	patterns := GetPatterns([]string{"iban", "india_aadhaar"}, nil, nil)
-	matches := scanForSensitiveData(tmp.Name(), patterns)
+	contentBytes, _ := os.ReadFile(tmp.Name())
+	matches := scanForSensitiveData(string(contentBytes), patterns)
 	if len(matches["iban"]) == 0 || len(matches["india_aadhaar"]) == 0 {
 		t.Fatal("expected international pattern matches")
 	}
@@ -114,12 +120,36 @@ func TestExcludeSensitiveDataTypes(t *testing.T) {
 	tmp.Close()
 	defer os.Remove(tmp.Name())
 	patterns := GetPatterns([]string{"email", "credit_card"}, nil, []string{"email"})
-	matches := scanForSensitiveData(tmp.Name(), patterns)
+	contentBytes, _ := os.ReadFile(tmp.Name())
+	matches := scanForSensitiveData(string(contentBytes), patterns)
 	if _, ok := matches["email"]; ok {
 		t.Fatal("email should have been excluded")
 	}
 	if len(matches["credit_card"]) == 0 {
 		t.Fatal("expected credit card match")
+	}
+}
+
+func TestRedactSensitiveMask(t *testing.T) {
+	matches := map[string][]string{
+		"email": {"test@example.com"},
+	}
+	redacted := redactSensitiveData(matches, "mask")
+	if redacted["email"][0] == "test@example.com" {
+		t.Fatal("expected masked value")
+	}
+	if !strings.HasSuffix(redacted["email"][0], "com") {
+		t.Fatal("expected masked value to preserve suffix")
+	}
+}
+
+func TestRedactSensitiveHash(t *testing.T) {
+	matches := map[string][]string{
+		"email": {"test@example.com"},
+	}
+	redacted := redactSensitiveData(matches, "hash")
+	if len(redacted["email"][0]) != 64 {
+		t.Fatalf("expected sha256 hash length, got %d", len(redacted["email"][0]))
 	}
 }
 
@@ -153,7 +183,7 @@ func TestCollectFileData(t *testing.T) {
 	fi, _ := os.Stat(tmp.Name())
 	cfg := &config.Config{HashAlgorithms: []string{"md5"}, MaxFileSize: 1024, ScanFiles: true, ScanSensitive: true}
 	patterns := GetPatterns([]string{"email"}, nil, nil)
-	data, err := collectFileData(tmp.Name(), fi, cfg, patterns)
+	data, err := collectFileData(context.Background(), tmp.Name(), fi, cfg, patterns)
 	if err != nil {
 		t.Fatalf("collect: %v", err)
 	}
@@ -192,7 +222,8 @@ func TestCountTotalFiles(t *testing.T) {
 	os.WriteFile(dir+"/a.txt", []byte("a"), 0644)
 	os.WriteFile(dir+"/b.txt", []byte("b"), 0644)
 	cfg := &config.Config{}
-	count, err := countTotalFiles(dir, cfg, time.Time{})
+	matcher := utils.NewPatternMatcher(cfg.IncludePatterns, cfg.ExcludePatterns)
+	count, err := countTotalFiles(dir, cfg, time.Time{}, matcher)
 	if err != nil || count != 2 {
 		t.Fatalf("count: %v %d", err, count)
 	}
@@ -206,7 +237,8 @@ func TestCountTotalFilesDelta(t *testing.T) {
 	time.Sleep(1 * time.Second)
 	os.WriteFile(dir+"/b.txt", []byte("b"), 0644)
 	cfg := &config.Config{DeltaScan: true}
-	count, err := countTotalFiles(dir, cfg, last)
+	matcher := utils.NewPatternMatcher(cfg.IncludePatterns, cfg.ExcludePatterns)
+	count, err := countTotalFiles(dir, cfg, last, matcher)
 	if err != nil || count != 1 {
 		t.Fatalf("delta count: %v %d", err, count)
 	}

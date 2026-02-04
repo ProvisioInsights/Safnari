@@ -36,6 +36,23 @@ func main() {
 	// Initialize logger
 	logger.Init(cfg.LogLevel)
 
+	if cfg.ScanSensitive && cfg.RedactSensitive == "" {
+		logger.Warn("Sensitive data matches will be stored unredacted. Consider --redact-sensitive mask or hash.")
+	}
+
+	if cfg.TraceFlight {
+		if err := tracing.StartFlightRecorder(cfg.TraceFlightMaxBytes, cfg.TraceFlightMinAge); err != nil {
+			logger.Warnf("Failed to start flight recorder: %v", err)
+		} else {
+			defer func() {
+				if err := tracing.WriteFlightRecorder(cfg.TraceFlightFile); err != nil {
+					logger.Warnf("Failed to write flight recorder: %v", err)
+				}
+				tracing.StopFlightRecorder()
+			}()
+		}
+	}
+
 	if latest, notes, newer, err := update.CheckForUpdate(version.Version); err == nil && newer {
 		if strings.Contains(strings.ToLower(notes), "security") {
 			logger.Warnf("Update available: %s -> %s (security fixes included)", version.Version, latest)
@@ -74,7 +91,7 @@ func main() {
 		cancel()
 	}()
 
-	go handleSignals(cancel, &metrics, writer)
+	go handleSignals(cancel, &metrics, writer, cfg.TraceFlight, cfg.TraceFlightFile)
 
 	// Start scanning
 	if cfg.ScanFiles || cfg.ScanSensitive {
@@ -93,7 +110,7 @@ func main() {
 	logger.Info("Scanning completed successfully.")
 }
 
-func handleSignals(cancelFunc context.CancelFunc, metrics *output.Metrics, w *output.Writer) {
+func handleSignals(cancelFunc context.CancelFunc, metrics *output.Metrics, w *output.Writer, traceFlight bool, traceFlightFile string) {
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
 	<-sigChan
@@ -102,6 +119,13 @@ func handleSignals(cancelFunc context.CancelFunc, metrics *output.Metrics, w *ou
 	// Record end time upon interruption
 	metrics.EndTime = time.Now().Format(time.RFC3339)
 	w.SetMetrics(*metrics)
+
+	if traceFlight {
+		if err := tracing.WriteFlightRecorder(traceFlightFile); err != nil {
+			logger.Warnf("Failed to write flight recorder: %v", err)
+		}
+		tracing.StopFlightRecorder()
+	}
 
 	cancelFunc()
 }

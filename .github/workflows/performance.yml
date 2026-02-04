@@ -30,7 +30,14 @@ jobs:
       - run: go test -run '^$' -bench=. -benchmem ./... | tee benchmark.txt
         working-directory: src
         shell: bash
+      - run: GOEXPERIMENT=jsonv2 go test -run '^$' -bench=. -benchmem -tags jsonv2 ./... | tee benchmark-jsonv2.txt
+        working-directory: src
+        shell: bash
       - uses: actions/upload-artifact@v4
         with:
           name: benchmarks-${{ matrix.goos }}-${{ matrix.goarch }}
           path: src/benchmark.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: benchmarks-jsonv2-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: src/benchmark-jsonv2.txt

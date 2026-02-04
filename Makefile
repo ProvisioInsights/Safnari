@@ -4,12 +4,20 @@ EXT := $(if $(filter windows,$(GOOS)),.exe,)
 BIN_DIR := bin
 BIN := $(BIN_DIR)/safnari-$(GOOS)-$(GOARCH)$(EXT)
 PLATFORMS := linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64
+JSONV2 ?= 1
+TAGS :=
+GOEXPERIMENT :=
+
+ifeq ($(JSONV2),1)
+TAGS = jsonv2
+GOEXPERIMENT = jsonv2
+endif
 
 .PHONY: build build-all fmt test lint clean
 
 build:
 	@mkdir -p $(BIN_DIR)
-	cd src && GOOS=$(GOOS) GOARCH=$(GOARCH) go build -o ../$(BIN) ./cmd
+	cd src && GOOS=$(GOOS) GOARCH=$(GOARCH) GOEXPERIMENT=$(GOEXPERIMENT) go build -tags "$(TAGS)" -o ../$(BIN) ./cmd
 
 build-all:
 	@mkdir -p $(BIN_DIR)
@@ -19,10 +27,10 @@ build-all:
 	done
 
 test:
-	cd src && go test ./...
+	cd src && GOEXPERIMENT=$(GOEXPERIMENT) go test -tags "$(TAGS)" ./...
 
 lint:
-	cd src && go vet ./...
+	cd src && GOEXPERIMENT=$(GOEXPERIMENT) go vet -tags "$(TAGS)" ./...
 
 fmt:
 	cd src && gofmt -w .

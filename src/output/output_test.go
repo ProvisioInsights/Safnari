@@ -51,6 +51,9 @@ func TestWriteDataStreaming(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read file: %v", err)
 	}
+	if !strings.Contains(string(content), "\"schema_version\":") {
+		t.Fatalf("expected schema_version, got: %s", string(content))
+	}
 	if !strings.Contains(string(content), "\"path\": \"early\"") {
 		t.Fatalf("expected written data, got: %s", string(content))
 	}
@@ -116,5 +119,36 @@ func TestOutputRotation(t *testing.T) {
 	}
 	if _, err := os.Stat(strings.TrimSuffix(base, ".json") + ".1.json"); err != nil {
 		t.Fatalf("rotation file not created")
+	}
+}
+
+func TestCSVOutput(t *testing.T) {
+	tmp, err := os.CreateTemp("", "out*.csv")
+	if err != nil {
+		t.Fatalf("temp file: %v", err)
+	}
+	defer os.Remove(tmp.Name())
+
+	cfg := &config.Config{OutputFileName: tmp.Name(), OutputFormat: "csv"}
+	sysInfo := &systeminfo.SystemInfo{RunningProcesses: []systeminfo.ProcessInfo{}}
+	w, err := New(cfg, sysInfo, &Metrics{})
+	if err != nil {
+		t.Fatalf("init: %v", err)
+	}
+	w.WriteData(map[string]interface{}{"path": "test.csv", "name": "file"})
+	w.Close()
+
+	content, err := os.ReadFile(tmp.Name())
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	if !strings.Contains(string(content), "record_type") {
+		t.Fatalf("missing csv header: %s", string(content))
+	}
+	if !strings.Contains(string(content), "schema_version") {
+		t.Fatalf("missing schema_version column: %s", string(content))
+	}
+	if !strings.Contains(string(content), "file") {
+		t.Fatalf("missing file row: %s", string(content))
 	}
 }

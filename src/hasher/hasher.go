@@ -9,7 +9,6 @@ import (
 	"io"
 	"os"
 
-	"github.com/glaslos/ssdeep"
 	"safnari/logger"
 )
 
@@ -25,8 +24,6 @@ func ComputeHashes(path string, algorithms []string) map[string]string {
 
 	hashers := make(map[string]hash.Hash)
 	writers := []io.Writer{}
-	needSSDeep := false
-
 	for _, algo := range algorithms {
 		switch algo {
 		case "md5":
@@ -41,8 +38,6 @@ func ComputeHashes(path string, algorithms []string) map[string]string {
 			h := sha256.New()
 			hashers["sha256"] = h
 			writers = append(writers, h)
-		case "ssdeep":
-			needSSDeep = true
 		default:
 			logger.Warnf("Unsupported hash algorithm: %s", algo)
 		}
@@ -56,14 +51,6 @@ func ComputeHashes(path string, algorithms []string) map[string]string {
 
 	for algo, h := range hashers {
 		hashes[algo] = fmt.Sprintf("%x", h.Sum(nil))
-	}
-
-	if needSSDeep {
-		if _, err := file.Seek(0, io.SeekStart); err == nil {
-			if hash, err := ssdeep.FuzzyFile(file); err == nil {
-				hashes["ssdeep"] = hash
-			}
-		}
 	}
 
 	return hashes
