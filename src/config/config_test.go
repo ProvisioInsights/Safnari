@@ -5,6 +5,7 @@ import (
 	"os"
 	"runtime"
 	"testing"
+	"time"
 )
 
 func TestParseCommaSeparated(t *testing.T) {
@@ -85,7 +86,7 @@ func TestValidate(t *testing.T) {
 	}
 }
 
-func TestFuzzyHashFlagAddsAlgorithm(t *testing.T) {
+func TestFuzzyHashFlagDefaultsAlgorithm(t *testing.T) {
 	oldArgs := os.Args
 	defer func() { os.Args = oldArgs }()
 	oldFlag := flag.CommandLine
@@ -100,15 +101,8 @@ func TestFuzzyHashFlagAddsAlgorithm(t *testing.T) {
 	if !cfg.FuzzyHash {
 		t.Fatal("expected fuzzy hash enabled")
 	}
-	found := false
-	for _, a := range cfg.HashAlgorithms {
-		if a == "ssdeep" {
-			found = true
-			break
-		}
-	}
-	if !found {
-		t.Fatal("ssdeep algorithm not added")
+	if len(cfg.FuzzyAlgorithms) == 0 || cfg.FuzzyAlgorithms[0] != "tlsh" {
+		t.Fatalf("expected tlsh default, got %v", cfg.FuzzyAlgorithms)
 	}
 }
 
@@ -160,5 +154,73 @@ func TestCollectSystemInfoFlag(t *testing.T) {
 	}
 	if cfg.CollectSystemInfo {
 		t.Fatal("expected system info collection disabled")
+	}
+}
+
+func TestRedactAndTraceFlightFlags(t *testing.T) {
+	oldArgs := os.Args
+	defer func() { os.Args = oldArgs }()
+	oldFlag := flag.CommandLine
+	flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ExitOnError)
+	defer func() { flag.CommandLine = oldFlag }()
+
+	os.Args = []string{
+		"cmd",
+		"--redact-sensitive", "mask",
+		"--trace-flight",
+		"--trace-flight-file", "trace.out",
+		"--trace-flight-max-bytes", "2048",
+		"--trace-flight-min-age", "5s",
+	}
+	cfg, err := LoadConfig()
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if cfg.RedactSensitive != "mask" {
+		t.Fatalf("expected redact-sensitive mask, got %q", cfg.RedactSensitive)
+	}
+	if !cfg.TraceFlight {
+		t.Fatal("expected trace flight enabled")
+	}
+	if cfg.TraceFlightFile != "trace.out" {
+		t.Fatalf("unexpected trace flight file: %s", cfg.TraceFlightFile)
+	}
+	if cfg.TraceFlightMaxBytes != 2048 {
+		t.Fatalf("unexpected trace flight max bytes: %d", cfg.TraceFlightMaxBytes)
+	}
+	if cfg.TraceFlightMinAge != 5*time.Second {
+		t.Fatalf("unexpected trace flight min age: %v", cfg.TraceFlightMinAge)
+	}
+}
+
+func TestOtelFlags(t *testing.T) {
+	oldArgs := os.Args
+	defer func() { os.Args = oldArgs }()
+	oldFlag := flag.CommandLine
+	flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ExitOnError)
+	defer func() { flag.CommandLine = oldFlag }()
+
+	os.Args = []string{
+		"cmd",
+		"--otel-endpoint", "https://otel.example.com/v1/logs",
+		"--otel-headers", "Authorization=Bearer test,Env=prod",
+		"--otel-service-name", "safnari-agent",
+		"--otel-timeout", "10s",
+	}
+	cfg, err := LoadConfig()
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if cfg.OtelEndpoint != "https://otel.example.com/v1/logs" {
+		t.Fatalf("unexpected otel endpoint: %s", cfg.OtelEndpoint)
+	}
+	if cfg.OtelServiceName != "safnari-agent" {
+		t.Fatalf("unexpected otel service name: %s", cfg.OtelServiceName)
+	}
+	if cfg.OtelTimeout != 10*time.Second {
+		t.Fatalf("unexpected otel timeout: %v", cfg.OtelTimeout)
+	}
+	if cfg.OtelHeaders["Authorization"] != "Bearer test" || cfg.OtelHeaders["Env"] != "prod" {
+		t.Fatalf("unexpected otel headers: %v", cfg.OtelHeaders)
 	}
 }

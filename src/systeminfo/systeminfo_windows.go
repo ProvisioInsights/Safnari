@@ -4,9 +4,12 @@
 package systeminfo
 
 import (
+	"context"
 	"fmt"
+	"os"
 	"os/exec"
 	"strings"
+	"time"
 
 	"github.com/shirou/gopsutil/v3/winservices"
 	"golang.org/x/sys/windows/registry"
@@ -14,7 +17,7 @@ import (
 )
 
 func gatherOSVersion(sysInfo *SystemInfo) error {
-	out, err := exec.Command("cmd", "/C", "ver").Output()
+	out, err := runCommandOutput("cmd", "/C", "ver")
 	if err != nil {
 		return fmt.Errorf("failed to get OS version: %v", err)
 	}
@@ -23,7 +26,7 @@ func gatherOSVersion(sysInfo *SystemInfo) error {
 }
 
 func gatherInstalledPatches(sysInfo *SystemInfo) error {
-	out, err := exec.Command("wmic", "qfe", "get", "HotFixID").Output()
+	out, err := runCommandOutput("wmic", "qfe", "get", "HotFixID")
 	if err != nil {
 		return fmt.Errorf("failed to get installed patches: %v", err)
 	}
@@ -46,6 +49,16 @@ func gatherStartupPrograms(sysInfo *SystemInfo) error {
 
 	for _, keyPath := range keys {
 		k, err := registry.OpenKey(registry.LOCAL_MACHINE, keyPath, registry.READ)
+		if err == nil {
+			defer k.Close()
+			names, err := k.ReadValueNames(0)
+			if err == nil {
+				sysInfo.StartupPrograms = append(sysInfo.StartupPrograms, names...)
+			}
+		}
+	}
+	for _, keyPath := range keys {
+		k, err := registry.OpenKey(registry.CURRENT_USER, keyPath, registry.READ)
 		if err == nil {
 			defer k.Close()
 			names, err := k.ReadValueNames(0)
@@ -105,6 +118,83 @@ func gatherRunningServices(sysInfo *SystemInfo) error {
 		sysInfo.RunningServices = append(sysInfo.RunningServices, ServiceInfo{Name: svcInfo.Name, Status: state})
 	}
 	return nil
+}
+
+func safeCommand(ctx context.Context, name string, args ...string) *exec.Cmd {
+	cmd := exec.CommandContext(ctx, name, args...)
+	cmd.Env = append(os.Environ(), "PATH=C:\\Windows\\System32;C:\\Windows")
+	return cmd
+}
+
+func gatherUsers(sysInfo *SystemInfo) error {
+	out, err := runCommandOutput("net", "user")
+	if err != nil {
+		return err
+	}
+	sysInfo.Users = append(sysInfo.Users, parseNetList(out)...)
+	return nil
+}
+
+func gatherGroups(sysInfo *SystemInfo) error {
+	out, err := runCommandOutput("net", "localgroup")
+	if err != nil {
+		return err
+	}
+	sysInfo.Groups = append(sysInfo.Groups, parseNetList(out)...)
+	return nil
+}
+
+func gatherAdmins(sysInfo *SystemInfo) error {
+	out, err := runCommandOutput("net", "localgroup", "administrators")
+	if err != nil {
+		return err
+	}
+	sysInfo.Admins = append(sysInfo.Admins, parseNetList(out)...)
+	return nil
+}
+
+func gatherScheduledTasks(sysInfo *SystemInfo) error {
+	out, err := runCommandOutput("schtasks", "/Query", "/FO", "LIST")
+	if err != nil {
+		return err
+	}
+	lines := strings.Split(string(out), "\n")
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "TaskName:") {
+			name := strings.TrimSpace(strings.TrimPrefix(line, "TaskName:"))
+			if name != "" {
+				sysInfo.ScheduledTasks = append(sysInfo.ScheduledTasks, name)
+			}
+		}
+	}
+	return nil
+}
+
+func parseNetList(out []byte) []string {
+	lines := strings.Split(string(out), "\n")
+	results := []string{}
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		if strings.HasPrefix(line, "The command") || strings.HasPrefix(line, "----") {
+			continue
+		}
+		fields := strings.Fields(line)
+		if len(fields) > 0 {
+			results = append(results, fields...)
+		}
+	}
+	return results
+}
+
+func runCommandOutput(name string, args ...string) ([]byte, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	cmd := safeCommand(ctx, name, args...)
+	return cmd.Output()
 }
 
 func serviceStateToString(state svc.State) string {

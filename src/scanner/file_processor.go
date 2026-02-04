@@ -2,21 +2,21 @@ package scanner
 
 import (
 	"context"
+	"crypto/sha256"
+	"errors"
+	"fmt"
 	"io"
 	"os"
 	"regexp"
 	"strings"
-	"time"
+	"unicode/utf8"
 
 	"safnari/config"
-	"safnari/hasher"
 	"safnari/logger"
-	"safnari/metadata"
 	"safnari/output"
 	"safnari/tracing"
 	"safnari/utils"
 
-	"github.com/djherbis/times"
 	"github.com/h2non/filetype"
 )
 
@@ -50,73 +50,58 @@ func ProcessFile(ctx context.Context, path string, cfg *config.Config, w *output
 		return
 	}
 
+	w.IncrementScanned()
+
 	endRegion := tracing.StartRegion(ctx, "collect_file_data")
-	fileData, err := collectFileData(path, fileInfo, cfg, sensitivePatterns)
+	fileData, err := collectFileData(ctx, path, fileInfo, cfg, sensitivePatterns)
 	endRegion()
 	if err != nil {
 		logger.Warnf("Failed to process file %s: %v", path, err)
 		return
 	}
-	if cfg.ScanFiles || (cfg.ScanSensitive && fileData["sensitive_data"] != nil) {
+	if shouldWriteFileData(cfg, fileData) {
 		w.WriteData(fileData)
 	}
 }
 
-func collectFileData(path string, fileInfo os.FileInfo, cfg *config.Config, sensitivePatterns map[string]*regexp.Regexp) (map[string]interface{}, error) {
+func collectFileData(ctx context.Context, path string, fileInfo os.FileInfo, cfg *config.Config, sensitivePatterns map[string]*regexp.Regexp) (map[string]interface{}, error) {
 	data := make(map[string]interface{})
 	data["path"] = path
 
-	if cfg.ScanFiles {
-		data["name"] = fileInfo.Name()
-		data["size"] = fileInfo.Size()
-		data["mod_time"] = fileInfo.ModTime().Format(time.RFC3339)
-
-		t, err := times.Stat(path)
-		if err == nil {
-			if t.HasBirthTime() {
-				data["creation_time"] = t.BirthTime().Format(time.RFC3339)
-			} else {
-				data["creation_time"] = ""
+	fc := newFileContext(path, fileInfo, cfg, sensitivePatterns)
+	for _, module := range buildFileModules(cfg, sensitivePatterns) {
+		if !module.Enabled(cfg) {
+			continue
+		}
+		if err := module.Collect(ctx, fc, data); err != nil {
+			if errors.Is(err, context.Canceled) {
+				return data, err
 			}
-			data["access_time"] = t.AccessTime().Format(time.RFC3339)
-			data["change_time"] = t.ChangeTime().Format(time.RFC3339)
-		} else {
-			data["creation_time"] = ""
-			data["access_time"] = ""
-			data["change_time"] = ""
-		}
-
-		data["attributes"] = getFileAttributes(fileInfo)
-		data["permissions"] = fileInfo.Mode().Perm().String()
-
-		owner, err := getFileOwnership(path)
-		if err == nil {
-			data["owner"] = owner
-		} else {
-			data["owner"] = ""
-		}
-	}
-
-	mimeType, err := getMimeType(path)
-	if err != nil {
-		mimeType = "unknown"
-	}
-	if cfg.ScanFiles {
-		data["mime_type"] = mimeType
-		hashes := hasher.ComputeHashes(path, cfg.HashAlgorithms)
-		data["hashes"] = hashes
-		meta := metadata.ExtractMetadata(path, mimeType)
-		data["metadata"] = meta
-	}
-
-	if cfg.ScanSensitive && len(sensitivePatterns) > 0 && shouldSearchContent(mimeType) {
-		matches := scanForSensitiveData(path, sensitivePatterns)
-		if len(matches) > 0 {
-			data["sensitive_data"] = matches
+			logger.Debugf("Module %s failed for %s: %v", module.Name(), path, err)
 		}
 	}
 
 	return data, nil
+}
+
+func shouldWriteFileData(cfg *config.Config, data map[string]interface{}) bool {
+	if cfg.ScanFiles {
+		return true
+	}
+	keys := []string{
+		"sensitive_data",
+		"search_hits",
+		"fuzzy_hashes",
+		"xattrs",
+		"acl",
+		"alternate_data_streams",
+	}
+	for _, key := range keys {
+		if data[key] != nil {
+			return true
+		}
+	}
+	return false
 }
 
 func getFileAttributes(fileInfo os.FileInfo) []string {
@@ -163,15 +148,51 @@ func getMimeType(path string) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	if kind == filetype.Unknown || kind.MIME.Value == "" {
+		return "unknown", nil
+	}
 	return kind.MIME.Value, nil
 }
 
-func shouldSearchContent(mimeType string) bool {
-	return strings.HasPrefix(mimeType, "text/") ||
+func shouldSearchContent(mimeType, path string) bool {
+	if strings.HasPrefix(mimeType, "text/") ||
 		strings.Contains(mimeType, "json") ||
 		strings.Contains(mimeType, "xml") ||
 		strings.Contains(mimeType, "html") ||
-		strings.Contains(mimeType, "javascript")
+		strings.Contains(mimeType, "javascript") {
+		return true
+	}
+	if mimeType == "unknown" || mimeType == "application/octet-stream" {
+		return isLikelyText(path)
+	}
+	return false
+}
+
+func isLikelyText(path string) bool {
+	sample, err := readFileSample(path, 4096)
+	if err != nil {
+		return false
+	}
+	return looksLikeText(sample)
+}
+
+func looksLikeText(sample []byte) bool {
+	if len(sample) == 0 {
+		return false
+	}
+	if !utf8.Valid(sample) {
+		return false
+	}
+	var control int
+	for _, b := range sample {
+		if b == 0 {
+			return false
+		}
+		if b < 0x09 || (b > 0x0D && b < 0x20) {
+			control++
+		}
+	}
+	return control <= len(sample)/10
 }
 
 func luhnValid(number string) bool {
@@ -196,37 +217,10 @@ func luhnValid(number string) bool {
 	return sum%10 == 0
 }
 
-func scanForSensitiveData(path string, patterns map[string]*regexp.Regexp) map[string][]string {
+func scanForSensitiveData(content string, patterns map[string]*regexp.Regexp) map[string][]string {
 	matches := make(map[string][]string)
-
-	file, err := os.Open(path)
-	if err != nil {
-		logger.Warnf("Failed to open file for scanning %s: %v", path, err)
-		return matches
-	}
-	defer file.Close()
-
-	stat, err := file.Stat()
-	if err != nil {
-		return matches
-	}
-
-	// Limit scanning to files below a certain size (e.g., 10 MB)
-	const maxSize = 10 * 1024 * 1024
-	if stat.Size() > maxSize {
-		logger.Debugf("Skipping content scanning for large file %s", path)
-		return matches
-	}
-
-	content, err := io.ReadAll(file)
-	if err != nil {
-		logger.Warnf("Failed to read file %s: %v", path, err)
-		return matches
-	}
-
-	textContent := string(content)
 	for dataType, pattern := range patterns {
-		found := pattern.FindAllString(textContent, -1)
+		found := pattern.FindAllString(content, -1)
 		if dataType == "credit_card" {
 			filtered := []string{}
 			for _, f := range found {
@@ -242,6 +236,91 @@ func scanForSensitiveData(path string, patterns map[string]*regexp.Regexp) map[s
 	}
 
 	return matches
+}
+
+func redactSensitiveData(matches map[string][]string, mode string) map[string][]string {
+	if mode == "" {
+		return matches
+	}
+	redacted := make(map[string][]string, len(matches))
+	for kind, values := range matches {
+		for _, value := range values {
+			redacted[kind] = append(redacted[kind], redactValue(value, mode))
+		}
+	}
+	return redacted
+}
+
+func redactValue(value, mode string) string {
+	switch mode {
+	case "hash":
+		sum := sha256.Sum256([]byte(value))
+		return fmt.Sprintf("%x", sum[:])
+	case "mask":
+		if len(value) <= 4 {
+			return "****"
+		}
+		return strings.Repeat("*", len(value)-4) + value[len(value)-4:]
+	default:
+		return value
+	}
+}
+
+func scanForSearchTerms(content string, terms []string) map[string]int {
+	hits := make(map[string]int)
+	for _, term := range terms {
+		if term == "" {
+			continue
+		}
+		count := strings.Count(content, term)
+		if count > 0 {
+			hits[term] = count
+		}
+	}
+	return hits
+}
+
+func readFileContent(path string, maxSize int64) ([]byte, error) {
+	const maxContentScanBytes int64 = 10 * 1024 * 1024
+	if maxSize <= 0 || maxSize > maxContentScanBytes {
+		maxSize = maxContentScanBytes
+	}
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+
+	if maxSize > 0 {
+		stat, err := file.Stat()
+		if err == nil && stat.Size() > maxSize {
+			return nil, nil
+		}
+	}
+	var reader io.Reader = file
+	if maxSize > 0 {
+		reader = io.LimitReader(file, maxSize)
+	}
+	content, err := io.ReadAll(reader)
+	if err != nil {
+		return nil, err
+	}
+	return content, nil
+}
+
+func readFileSample(path string, maxSize int) ([]byte, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+
+	buf := make([]byte, maxSize)
+	n, err := file.Read(buf)
+	if err != nil && err != io.EOF {
+		return nil, err
+	}
+	return buf[:n], nil
 }
 
 // getFileOwnership function is implemented in platform-specific files:

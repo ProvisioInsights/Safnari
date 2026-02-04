@@ -6,12 +6,14 @@ package systeminfo
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
+	"time"
 )
 
 func gatherOSVersion(sysInfo *SystemInfo) error {
@@ -34,11 +36,11 @@ func gatherOSVersion(sysInfo *SystemInfo) error {
 			return err
 		}
 	case "darwin":
-		nameOut, err := exec.Command("sw_vers", "-productName").Output()
+		nameOut, err := runCommandOutput("sw_vers", "-productName")
 		if err != nil {
 			return err
 		}
-		verOut, err := exec.Command("sw_vers", "-productVersion").Output()
+		verOut, err := runCommandOutput("sw_vers", "-productVersion")
 		if err != nil {
 			return err
 		}
@@ -52,7 +54,7 @@ func gatherOSVersion(sysInfo *SystemInfo) error {
 func gatherInstalledPatches(sysInfo *SystemInfo) error {
 	switch runtime.GOOS {
 	case "linux":
-		if out, err := exec.Command("dpkg-query", "-f", "${Package}\n", "-W").Output(); err == nil {
+		if out, err := runCommandOutput("dpkg-query", "-f", "${Package}\n", "-W"); err == nil {
 			for _, line := range strings.Split(string(out), "\n") {
 				line = strings.TrimSpace(line)
 				if line != "" {
@@ -61,7 +63,7 @@ func gatherInstalledPatches(sysInfo *SystemInfo) error {
 			}
 			return nil
 		}
-		if out, err := exec.Command("rpm", "-qa", "--qf", "%{NAME}\n").Output(); err == nil {
+		if out, err := runCommandOutput("rpm", "-qa", "--qf", "%{NAME}\n"); err == nil {
 			for _, line := range strings.Split(string(out), "\n") {
 				line = strings.TrimSpace(line)
 				if line != "" {
@@ -70,7 +72,7 @@ func gatherInstalledPatches(sysInfo *SystemInfo) error {
 			}
 		}
 	case "darwin":
-		if out, err := exec.Command("softwareupdate", "--history").Output(); err == nil {
+		if out, err := runCommandOutput("softwareupdate", "--history"); err == nil {
 			scanner := bufio.NewScanner(bytes.NewReader(out))
 			for scanner.Scan() {
 				line := strings.TrimSpace(scanner.Text())
@@ -114,7 +116,7 @@ func gatherStartupPrograms(sysInfo *SystemInfo) error {
 func gatherInstalledApps(sysInfo *SystemInfo) error {
 	switch runtime.GOOS {
 	case "linux":
-		if out, err := exec.Command("dpkg-query", "-f", "${Package}\n", "-W").Output(); err == nil {
+		if out, err := runCommandOutput("dpkg-query", "-f", "${Package}\n", "-W"); err == nil {
 			for _, line := range strings.Split(string(out), "\n") {
 				line = strings.TrimSpace(line)
 				if line != "" {
@@ -123,7 +125,7 @@ func gatherInstalledApps(sysInfo *SystemInfo) error {
 			}
 			return nil
 		}
-		if out, err := exec.Command("rpm", "-qa", "--qf", "%{NAME}\n").Output(); err == nil {
+		if out, err := runCommandOutput("rpm", "-qa", "--qf", "%{NAME}\n"); err == nil {
 			for _, line := range strings.Split(string(out), "\n") {
 				line = strings.TrimSpace(line)
 				if line != "" {
@@ -139,7 +141,7 @@ func gatherInstalledApps(sysInfo *SystemInfo) error {
 				}
 			}
 		}
-		if out, err := exec.Command("brew", "list").Output(); err == nil {
+		if out, err := runCommandOutput("brew", "list"); err == nil {
 			for _, line := range strings.Split(string(out), "\n") {
 				line = strings.TrimSpace(line)
 				if line != "" {
@@ -154,7 +156,7 @@ func gatherInstalledApps(sysInfo *SystemInfo) error {
 func gatherRunningServices(sysInfo *SystemInfo) error {
 	switch runtime.GOOS {
 	case "linux":
-		out, err := exec.Command("systemctl", "list-units", "--type", "service", "--state", "running", "--no-legend", "--no-pager").Output()
+		out, err := runCommandOutput("systemctl", "list-units", "--type", "service", "--state", "running", "--no-legend", "--no-pager")
 		if err != nil {
 			return nil
 		}
@@ -166,7 +168,7 @@ func gatherRunningServices(sysInfo *SystemInfo) error {
 			}
 		}
 	case "darwin":
-		out, err := exec.Command("launchctl", "list").Output()
+		out, err := runCommandOutput("launchctl", "list")
 		if err != nil {
 			return nil
 		}
@@ -187,4 +189,122 @@ func gatherRunningServices(sysInfo *SystemInfo) error {
 		}
 	}
 	return nil
+}
+
+func gatherUsers(sysInfo *SystemInfo) error {
+	users, err := readColonFile("/etc/passwd")
+	if err != nil {
+		return err
+	}
+	sysInfo.Users = append(sysInfo.Users, users...)
+	return nil
+}
+
+func gatherGroups(sysInfo *SystemInfo) error {
+	groups, err := readColonFile("/etc/group")
+	if err != nil {
+		return err
+	}
+	sysInfo.Groups = append(sysInfo.Groups, groups...)
+	return nil
+}
+
+func gatherAdmins(sysInfo *SystemInfo) error {
+	groups, err := readColonFile("/etc/group")
+	if err != nil {
+		return err
+	}
+	for _, g := range groups {
+		if g == "sudo" || g == "wheel" || g == "admin" {
+			sysInfo.Admins = append(sysInfo.Admins, g)
+		}
+	}
+	return nil
+}
+
+func gatherScheduledTasks(sysInfo *SystemInfo) error {
+	switch runtime.GOOS {
+	case "linux":
+		dirs := []string{"/etc/cron.d", "/etc/cron.daily", "/etc/cron.weekly", "/etc/cron.monthly", "/var/spool/cron"}
+		for _, d := range dirs {
+			entries, err := os.ReadDir(d)
+			if err != nil {
+				continue
+			}
+			for _, e := range entries {
+				sysInfo.ScheduledTasks = append(sysInfo.ScheduledTasks, filepath.Join(d, e.Name()))
+			}
+		}
+		if data, err := os.ReadFile("/etc/crontab"); err == nil {
+			for _, line := range parseCronLines(data) {
+				sysInfo.ScheduledTasks = append(sysInfo.ScheduledTasks, line)
+			}
+		}
+	case "darwin":
+		dirs := []string{"/Library/LaunchAgents", "/Library/LaunchDaemons", filepath.Join(os.Getenv("HOME"), "Library", "LaunchAgents")}
+		for _, d := range dirs {
+			entries, err := os.ReadDir(d)
+			if err != nil {
+				continue
+			}
+			for _, e := range entries {
+				sysInfo.ScheduledTasks = append(sysInfo.ScheduledTasks, filepath.Join(d, e.Name()))
+			}
+		}
+		if out, err := runCommandOutput("crontab", "-l"); err == nil {
+			for _, line := range parseCronLines(out) {
+				sysInfo.ScheduledTasks = append(sysInfo.ScheduledTasks, line)
+			}
+		}
+	}
+	return nil
+}
+
+func safeCommand(ctx context.Context, name string, args ...string) *exec.Cmd {
+	cmd := exec.CommandContext(ctx, name, args...)
+	cmd.Env = append(os.Environ(), "PATH=/usr/sbin:/usr/bin:/sbin:/bin:/usr/local/bin:/opt/homebrew/bin")
+	return cmd
+}
+
+func runCommandOutput(name string, args ...string) ([]byte, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	cmd := safeCommand(ctx, name, args...)
+	return cmd.Output()
+}
+
+func readColonFile(path string) ([]string, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	lines := []string{}
+	scanner := bufio.NewScanner(bytes.NewReader(data))
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		parts := strings.SplitN(line, ":", 2)
+		if len(parts) > 0 && parts[0] != "" {
+			lines = append(lines, parts[0])
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		return lines, err
+	}
+	return lines, nil
+}
+
+func parseCronLines(data []byte) []string {
+	lines := []string{}
+	scanner := bufio.NewScanner(bytes.NewReader(data))
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		lines = append(lines, line)
+	}
+	return lines
 }

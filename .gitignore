@@ -16,3 +16,11 @@
 
 # Local build artifacts
 bin/
+
+# Local tooling and reports
+.codex/
+.venv/
+ownership-map-out/
+Safnari-threat-model.md
+security_best_practices_report.md
+safnari-*.json

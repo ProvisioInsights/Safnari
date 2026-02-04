@@ -3,6 +3,8 @@ package systeminfo
 import (
 	"fmt"
 	"net"
+	"time"
+
 	"safnari/config"
 	"safnari/logger"
 
@@ -19,16 +21,22 @@ type SystemInfo struct {
 	NetworkInterfaces []InterfaceInfo  `json:"network_interfaces"`
 	OpenConnections   []ConnectionInfo `json:"open_connections"`
 	RunningServices   []ServiceInfo    `json:"running_services"`
+	Users             []string         `json:"users"`
+	Groups            []string         `json:"groups"`
+	Admins            []string         `json:"admins"`
+	ScheduledTasks    []string         `json:"scheduled_tasks"`
 }
 
 type ProcessInfo struct {
 	PID           int32   `json:"pid"`
+	PPID          int32   `json:"ppid,omitempty"`
 	Name          string  `json:"name"`
 	CPUPercent    float64 `json:"cpu_percent,omitempty"`
 	MemoryPercent float32 `json:"memory_percent,omitempty"`
 	Cmdline       string  `json:"cmdline,omitempty"`
 	Username      string  `json:"username,omitempty"`
 	Exe           string  `json:"exe,omitempty"`
+	StartTime     string  `json:"start_time,omitempty"`
 }
 
 func GetSystemInfo(cfg *config.Config) (*SystemInfo, error) {
@@ -61,6 +69,26 @@ func GetSystemInfo(cfg *config.Config) (*SystemInfo, error) {
 
 		if err := gatherRunningServices(sysInfo); err != nil {
 			logger.Warnf("Failed to gather running services: %v", err)
+		}
+		if cfg.CollectUsers {
+			if err := gatherUsers(sysInfo); err != nil {
+				logger.Warnf("Failed to gather users: %v", err)
+			}
+		}
+		if cfg.CollectGroups {
+			if err := gatherGroups(sysInfo); err != nil {
+				logger.Warnf("Failed to gather groups: %v", err)
+			}
+		}
+		if cfg.CollectAdmins {
+			if err := gatherAdmins(sysInfo); err != nil {
+				logger.Warnf("Failed to gather admins: %v", err)
+			}
+		}
+		if cfg.CollectScheduled {
+			if err := gatherScheduledTasks(sysInfo); err != nil {
+				logger.Warnf("Failed to gather scheduled tasks: %v", err)
+			}
 		}
 	}
 
@@ -113,6 +141,15 @@ func gatherRunningProcesses(sysInfo *SystemInfo, extended bool) error {
 			exe, err := p.Exe()
 			if err == nil {
 				procInfo.Exe = exe
+			}
+
+			ppid, err := p.Ppid()
+			if err == nil {
+				procInfo.PPID = ppid
+			}
+			startMillis, err := p.CreateTime()
+			if err == nil && startMillis > 0 {
+				procInfo.StartTime = time.Unix(0, startMillis*int64(time.Millisecond)).UTC().Format(time.RFC3339)
 			}
 		}
 
