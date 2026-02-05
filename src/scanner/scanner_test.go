@@ -66,7 +66,7 @@ func TestScanForSensitiveData(t *testing.T) {
 	defer os.Remove(tmp.Name())
 	patterns := GetPatterns([]string{"email"}, nil, nil)
 	fileContent, _ := os.ReadFile(tmp.Name())
-	matches := scanForSensitiveData(string(fileContent), patterns)
+	matches, _ := scanForSensitiveData(string(fileContent), patterns, 100, 1000)
 	if len(matches["email"]) == 0 {
 		t.Fatal("expected email match")
 	}
@@ -80,7 +80,7 @@ func TestScanForSensitiveDataCreditCard(t *testing.T) {
 	defer os.Remove(tmp.Name())
 	patterns := GetPatterns([]string{"credit_card"}, nil, nil)
 	contentBytes, _ := os.ReadFile(tmp.Name())
-	matches := scanForSensitiveData(string(contentBytes), patterns)
+	matches, _ := scanForSensitiveData(string(contentBytes), patterns, 100, 1000)
 	if len(matches["credit_card"]) != 1 || matches["credit_card"][0] != "4111-1111-1111-1111" {
 		t.Fatalf("expected valid credit card match, got %v", matches["credit_card"])
 	}
@@ -94,7 +94,7 @@ func TestCustomSensitivePattern(t *testing.T) {
 	custom := map[string]string{"token": "abc\\d+"}
 	patterns := GetPatterns([]string{"token"}, custom, nil)
 	contentBytes, _ := os.ReadFile(tmp.Name())
-	matches := scanForSensitiveData(string(contentBytes), patterns)
+	matches, _ := scanForSensitiveData(string(contentBytes), patterns, 100, 1000)
 	if len(matches["token"]) == 0 {
 		t.Fatal("expected custom pattern match")
 	}
@@ -108,7 +108,7 @@ func TestInternationalSensitivePatterns(t *testing.T) {
 	defer os.Remove(tmp.Name())
 	patterns := GetPatterns([]string{"iban", "india_aadhaar"}, nil, nil)
 	contentBytes, _ := os.ReadFile(tmp.Name())
-	matches := scanForSensitiveData(string(contentBytes), patterns)
+	matches, _ := scanForSensitiveData(string(contentBytes), patterns, 100, 1000)
 	if len(matches["iban"]) == 0 || len(matches["india_aadhaar"]) == 0 {
 		t.Fatal("expected international pattern matches")
 	}
@@ -121,12 +121,24 @@ func TestExcludeSensitiveDataTypes(t *testing.T) {
 	defer os.Remove(tmp.Name())
 	patterns := GetPatterns([]string{"email", "credit_card"}, nil, []string{"email"})
 	contentBytes, _ := os.ReadFile(tmp.Name())
-	matches := scanForSensitiveData(string(contentBytes), patterns)
+	matches, _ := scanForSensitiveData(string(contentBytes), patterns, 100, 1000)
 	if _, ok := matches["email"]; ok {
 		t.Fatal("email should have been excluded")
 	}
 	if len(matches["credit_card"]) == 0 {
 		t.Fatal("expected credit card match")
+	}
+}
+
+func TestScanForSensitiveDataLimits(t *testing.T) {
+	content := "a@test.com b@test.com c@test.com d@test.com"
+	patterns := GetPatterns([]string{"email"}, nil, nil)
+	matches, counts := scanForSensitiveData(content, patterns, 2, 2)
+	if len(matches["email"]) != 2 {
+		t.Fatalf("expected 2 limited matches, got %v", matches["email"])
+	}
+	if counts["email"] != 2 {
+		t.Fatalf("expected limited count of 2, got %d", counts["email"])
 	}
 }
 
@@ -215,6 +227,37 @@ func TestProcessFile(t *testing.T) {
 	patterns := GetPatterns([]string{"email"}, nil, nil)
 	ctx := context.Background()
 	ProcessFile(ctx, tmp.Name(), cfg, w, patterns)
+}
+
+func TestProcessFileMaxFileSizeZeroTreatsAsUnlimited(t *testing.T) {
+	tmp, _ := os.CreateTemp("", "proc-zero-limit*.txt")
+	content := strings.Repeat("z", 256)
+	tmp.WriteString(content)
+	tmp.Close()
+	defer os.Remove(tmp.Name())
+
+	outFile, _ := os.CreateTemp("", "out-zero-limit*.json")
+	defer os.Remove(outFile.Name())
+	cfg := &config.Config{
+		HashAlgorithms: []string{"sha256"},
+		MaxFileSize:    0,
+		ScanFiles:      true,
+		ScanSensitive:  false,
+		StartPaths:     []string{filepath.Dir(tmp.Name())},
+		OutputFileName: outFile.Name(),
+	}
+	sys := &systeminfo.SystemInfo{RunningProcesses: []systeminfo.ProcessInfo{}}
+	metrics := &output.Metrics{}
+	w, err := output.New(cfg, sys, metrics)
+	if err != nil {
+		t.Fatalf("output init: %v", err)
+	}
+	defer w.Close()
+
+	ProcessFile(context.Background(), tmp.Name(), cfg, w, GetPatterns(nil, nil, nil))
+	if metrics.FilesScanned != 1 {
+		t.Fatalf("expected file to be scanned when max-file-size=0, got %d", metrics.FilesScanned)
+	}
 }
 
 func TestCountTotalFiles(t *testing.T) {

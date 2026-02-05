@@ -8,6 +8,7 @@ import (
 	"runtime"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"safnari/config"
@@ -84,6 +85,15 @@ func ScanFiles(ctx context.Context, cfg *config.Config, metrics *output.Metrics,
 	}
 
 	var wg sync.WaitGroup
+	progressCh := make(chan int, maxInt(cfg.ConcurrencyLevel*4, 64))
+	var progressWG sync.WaitGroup
+	progressWG.Add(1)
+	go func() {
+		defer progressWG.Done()
+		for delta := range progressCh {
+			_ = bar.Add(delta)
+		}
+	}()
 
 	// Prepare sensitive data patterns
 	sensitivePatterns := GetPatterns(cfg.IncludeDataTypes, cfg.CustomPatterns, cfg.ExcludeDataTypes)
@@ -96,13 +106,34 @@ func ScanFiles(ctx context.Context, cfg *config.Config, metrics *output.Metrics,
 		ioLimiter = rate.NewLimiter(rate.Inf, 1)
 	}
 
+	var tuneState *autoTuneState
 	if cfg.AutoTune {
-		applyAutoTune(ctx, cfg, ioLimiter)
+		tuneState = applyAutoTune(cfg, ioLimiter)
 	} else {
 		adjustConcurrency(cfg)
 	}
 
 	filesChan := make(chan string, cfg.ConcurrencyLevel)
+	var processedCounter atomic.Int64
+	if cfg.AutoTune {
+		startAutoTuneLoop(
+			ctx,
+			cfg,
+			ioLimiter,
+			tuneState,
+			autoTuneTelemetry{
+				queueDepthFn: func() int {
+					return len(filesChan)
+				},
+				queueCapacityFn: func() int {
+					return cap(filesChan)
+				},
+				processedCountFn: func() int64 {
+					return processedCounter.Load()
+				},
+			},
+		)
+	}
 
 	// Start the file walking in a separate goroutine
 	go func() {
@@ -161,17 +192,20 @@ func ScanFiles(ctx context.Context, cfg *config.Config, metrics *output.Metrics,
 					// Continue processing
 				}
 				ProcessFile(ctx, filePath, cfg, w, sensitivePatterns)
-				bar.Add(1)
+				processedCounter.Add(1)
+				progressCh <- 1
 			}
 		}()
 	}
 
 	wg.Wait()
+	close(progressCh)
+	progressWG.Wait()
 	if cfg.SkipCount {
 		metrics.TotalFiles = metrics.FilesScanned
 	}
 	if cfg.DeltaScan && cfg.LastScanFile != "" {
-		if err := os.WriteFile(cfg.LastScanFile, []byte(time.Now().UTC().Format(time.RFC3339)), 0644); err != nil {
+		if err := os.WriteFile(cfg.LastScanFile, []byte(time.Now().UTC().Format(time.RFC3339)), 0600); err != nil {
 			logger.Warnf("Failed to write last scan time: %v", err)
 		}
 	}

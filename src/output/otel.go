@@ -23,21 +23,29 @@ type otelLogger struct {
 	provider *sdklog.LoggerProvider
 	logger   otelLog.Logger
 	timeout  time.Duration
+	endpoint string
+	policy   otelPolicy
+}
+
+type otelPolicy struct {
+	includePaths     bool
+	includeSensitive bool
+	includeCmdline   bool
 }
 
 func newOtelLogger(cfg *config.Config) (*otelLogger, error) {
 	if cfg == nil {
 		return nil, nil
 	}
-	if cfg.OtelEndpoint == "" && os.Getenv("OTEL_EXPORTER_OTLP_LOGS_ENDPOINT") == "" &&
-		os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT") == "" {
+	endpoint := resolveOtelEndpoint(cfg)
+	if endpoint == "" {
 		return nil, nil
 	}
-
-	opts := []otlploghttp.Option{}
-	if cfg.OtelEndpoint != "" {
-		opts = append(opts, otlploghttp.WithEndpointURL(cfg.OtelEndpoint))
+	if !strings.HasPrefix(endpoint, "http://") && !strings.HasPrefix(endpoint, "https://") {
+		return nil, fmt.Errorf("otel endpoint must include scheme (http or https)")
 	}
+
+	opts := []otlploghttp.Option{otlploghttp.WithEndpointURL(endpoint)}
 	if len(cfg.OtelHeaders) > 0 {
 		opts = append(opts, otlploghttp.WithHeaders(cfg.OtelHeaders))
 	}
@@ -63,13 +71,44 @@ func newOtelLogger(cfg *config.Config) (*otelLogger, error) {
 		provider: provider,
 		logger:   provider.Logger("safnari"),
 		timeout:  cfg.OtelTimeout,
+		endpoint: endpoint,
+		policy: otelPolicy{
+			includePaths:     cfg.OtelExportPaths,
+			includeSensitive: cfg.OtelExportSensitive,
+			includeCmdline:   cfg.OtelExportCmdline,
+		},
 	}, nil
+}
+
+func resolveOtelEndpoint(cfg *config.Config) string {
+	if cfg == nil {
+		return ""
+	}
+	if endpoint := strings.TrimSpace(cfg.OtelEndpoint); endpoint != "" {
+		return endpoint
+	}
+	if !cfg.OtelFromEnv {
+		return ""
+	}
+	if endpoint := strings.TrimSpace(os.Getenv("OTEL_EXPORTER_OTLP_LOGS_ENDPOINT")); endpoint != "" {
+		return endpoint
+	}
+	return strings.TrimSpace(os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT"))
+}
+
+func (o *otelLogger) Endpoint() string {
+	if o == nil {
+		return ""
+	}
+	return o.endpoint
 }
 
 func (o *otelLogger) Emit(recordType string, payload interface{}) {
 	if o == nil || o.logger == nil {
 		return
 	}
+	safePayload := sanitizePayload(recordType, payload, o.policy)
+
 	var record otelLog.Record
 	record.SetTimestamp(time.Now())
 	record.SetObservedTimestamp(time.Now())
@@ -78,13 +117,13 @@ func (o *otelLogger) Emit(recordType string, payload interface{}) {
 		otelLog.String("record_type", recordType),
 		otelLog.String("schema_version", SchemaVersion),
 	)
-	if attrs := semanticAttributes(recordType, payload); len(attrs) > 0 {
+	if attrs := semanticAttributes(recordType, safePayload, o.policy); len(attrs) > 0 {
 		record.AddAttributes(attrs...)
 	}
 
-	value := toLogValue(payload)
+	value := toLogValue(safePayload)
 	if value.Kind() == otelLog.KindEmpty {
-		if data, err := json.Marshal(payload); err == nil {
+		if data, err := json.Marshal(safePayload); err == nil {
 			var decoded interface{}
 			if err := json.Unmarshal(data, &decoded); err == nil {
 				decodedValue := toLogValue(decoded)
@@ -117,6 +156,84 @@ func (o *otelLogger) Shutdown() {
 	if err := o.provider.Shutdown(ctx); err != nil {
 		logger.Debugf("OTEL shutdown failed: %v", err)
 	}
+}
+
+func sanitizePayload(recordType string, payload interface{}, policy otelPolicy) interface{} {
+	data := payloadToMap(payload)
+	if len(data) == 0 {
+		return payload
+	}
+
+	switch recordType {
+	case "file":
+		sanitized := cloneMap(data)
+		if !policy.includePaths {
+			delete(sanitized, "path")
+		}
+		if !policy.includeSensitive {
+			delete(sanitized, "sensitive_data")
+			delete(sanitized, "search_hits")
+		}
+		return sanitized
+	case "process":
+		sanitized := cloneMap(data)
+		if !policy.includeCmdline {
+			delete(sanitized, "cmdline")
+		}
+		if !policy.includePaths {
+			delete(sanitized, "exe")
+		}
+		return sanitized
+	case "system_info":
+		if policy.includeSensitive {
+			return data
+		}
+		sanitized := map[string]interface{}{}
+		if osVersion := getFieldValue(data, "os_version"); osVersion != nil {
+			sanitized["os_version"] = osVersion
+		}
+		addSliceCount(sanitized, "installed_patches_count", getFieldValue(data, "installed_patches"))
+		addSliceCount(sanitized, "startup_programs_count", getFieldValue(data, "startup_programs"))
+		addSliceCount(sanitized, "installed_apps_count", getFieldValue(data, "installed_apps"))
+		addSliceCount(sanitized, "network_interfaces_count", getFieldValue(data, "network_interfaces"))
+		addSliceCount(sanitized, "open_connections_count", getFieldValue(data, "open_connections"))
+		addSliceCount(sanitized, "running_services_count", getFieldValue(data, "running_services"))
+		addSliceCount(sanitized, "users_count", getFieldValue(data, "users"))
+		addSliceCount(sanitized, "groups_count", getFieldValue(data, "groups"))
+		addSliceCount(sanitized, "admins_count", getFieldValue(data, "admins"))
+		addSliceCount(sanitized, "scheduled_tasks_count", getFieldValue(data, "scheduled_tasks"))
+		addSliceCount(sanitized, "running_processes_count", getFieldValue(data, "running_processes"))
+		return sanitized
+	default:
+		return payload
+	}
+}
+
+func addSliceCount(dst map[string]interface{}, key string, value interface{}) {
+	if count, ok := valueCount(value); ok {
+		dst[key] = count
+	}
+}
+
+func valueCount(value interface{}) (int, bool) {
+	switch v := value.(type) {
+	case []interface{}:
+		return len(v), true
+	case []string:
+		return len(v), true
+	case []map[string]interface{}:
+		return len(v), true
+	default:
+		return 0, false
+	}
+}
+
+func cloneMap(src map[string]interface{}) map[string]interface{} {
+	dst := make(map[string]interface{}, len(src))
+	for k, v := range src {
+		dst[k] = v
+	}
+	return dst
 }
 
 func toLogValue(value interface{}) otelLog.Value {
@@ -195,7 +312,7 @@ func toLogKeyValues(values map[string]interface{}) []otelLog.KeyValue {
 	return kvs
 }
 
-func semanticAttributes(recordType string, payload interface{}) []otelLog.KeyValue {
+func semanticAttributes(recordType string, payload interface{}, policy otelPolicy) []otelLog.KeyValue {
 	data := payloadToMap(payload)
 	if len(data) == 0 {
 		return nil
@@ -203,11 +320,11 @@ func semanticAttributes(recordType string, payload interface{}) []otelLog.KeyVal
 
 	switch recordType {
 	case "file":
-		return fileSemanticAttributes(data)
+		return fileSemanticAttributes(data, policy)
 	case "process":
-		return processSemanticAttributes(data)
+		return processSemanticAttributes(data, policy)
 	case "system_info":
-		return systemSemanticAttributes(data)
+		return systemSemanticAttributes(data, policy)
 	case "metrics":
 		return metricsSemanticAttributes(data)
 	default:
@@ -215,7 +332,7 @@ func semanticAttributes(recordType string, payload interface{}) []otelLog.KeyVal
 	}
 }
 
-func fileSemanticAttributes(data map[string]interface{}) []otelLog.KeyValue {
+func fileSemanticAttributes(data map[string]interface{}, policy otelPolicy) []otelLog.KeyValue {
 	var kvs []otelLog.KeyValue
 
 	path := getStringField(data, "path")
@@ -223,7 +340,7 @@ func fileSemanticAttributes(data map[string]interface{}) []otelLog.KeyValue {
 	if name == "" && path != "" {
 		name = filepath.Base(path)
 	}
-	if path != "" {
+	if policy.includePaths && path != "" {
 		kvs = append(kvs, otelLog.String(string(semconv.FilePathKey), path))
 		kvs = append(kvs, otelLog.String(string(semconv.FileDirectoryKey), filepath.Dir(path)))
 		ext := strings.TrimPrefix(filepath.Ext(path), ".")
@@ -279,13 +396,15 @@ func fileSemanticAttributes(data map[string]interface{}) []otelLog.KeyValue {
 	kvs = appendInterfaceAttr(kvs, "safnari.file.xattrs", getFieldValue(data, "xattrs"))
 	kvs = appendInterfaceAttr(kvs, "safnari.file.acl", getFieldValue(data, "acl"))
 	kvs = appendInterfaceAttr(kvs, "safnari.file.alternate_data_streams", getFieldValue(data, "alternate_data_streams"))
-	kvs = appendInterfaceAttr(kvs, "safnari.file.sensitive_data", getFieldValue(data, "sensitive_data"))
-	kvs = appendInterfaceAttr(kvs, "safnari.file.search_hits", getFieldValue(data, "search_hits"))
+	if policy.includeSensitive {
+		kvs = appendInterfaceAttr(kvs, "safnari.file.sensitive_data", getFieldValue(data, "sensitive_data"))
+		kvs = appendInterfaceAttr(kvs, "safnari.file.search_hits", getFieldValue(data, "search_hits"))
+	}
 
 	return kvs
 }
 
-func processSemanticAttributes(data map[string]interface{}) []otelLog.KeyValue {
+func processSemanticAttributes(data map[string]interface{}, policy otelPolicy) []otelLog.KeyValue {
 	var kvs []otelLog.KeyValue
 
 	if pid, ok := getInt64Field(data, "pid"); ok {
@@ -300,10 +419,12 @@ func processSemanticAttributes(data map[string]interface{}) []otelLog.KeyValue {
 	if name != "" {
 		kvs = append(kvs, otelLog.String(string(semconv.ProcessExecutableNameKey), name))
 	}
-	if exe != "" {
+	if policy.includePaths && exe != "" {
 		kvs = append(kvs, otelLog.String(string(semconv.ProcessExecutablePathKey), exe))
 	}
-	kvs = appendStringAttr(kvs, string(semconv.ProcessCommandLineKey), getStringField(data, "cmdline"))
+	if policy.includeCmdline {
+		kvs = appendStringAttr(kvs, string(semconv.ProcessCommandLineKey), getStringField(data, "cmdline"))
+	}
 	kvs = appendStringAttr(kvs, string(semconv.ProcessOwnerKey), getStringField(data, "username"))
 	kvs = appendStringAttr(kvs, string(semconv.ProcessCreationTimeKey), getStringField(data, "start_time"))
 
@@ -317,7 +438,7 @@ func processSemanticAttributes(data map[string]interface{}) []otelLog.KeyValue {
 	return kvs
 }
 
-func systemSemanticAttributes(data map[string]interface{}) []otelLog.KeyValue {
+func systemSemanticAttributes(data map[string]interface{}, policy otelPolicy) []otelLog.KeyValue {
 	var kvs []otelLog.KeyValue
 
 	osVersion := getStringField(data, "os_version")
@@ -326,29 +447,75 @@ func systemSemanticAttributes(data map[string]interface{}) []otelLog.KeyValue {
 		kvs = append(kvs, otelLog.String(string(semconv.OSVersionKey), osVersion))
 	}
 
-	kvs = appendInterfaceAttr(kvs, "safnari.system.installed_patches", getFieldValue(data, "installed_patches"))
-	kvs = appendInterfaceAttr(kvs, "safnari.system.startup_programs", getFieldValue(data, "startup_programs"))
-	kvs = appendInterfaceAttr(kvs, "safnari.system.installed_apps", getFieldValue(data, "installed_apps"))
-	kvs = appendInterfaceAttr(kvs, "safnari.system.network_interfaces", getFieldValue(data, "network_interfaces"))
-	kvs = appendInterfaceAttr(kvs, "safnari.system.open_connections", getFieldValue(data, "open_connections"))
-	kvs = appendInterfaceAttr(kvs, "safnari.system.running_services", getFieldValue(data, "running_services"))
-	kvs = appendInterfaceAttr(kvs, "safnari.system.users", getFieldValue(data, "users"))
-	kvs = appendInterfaceAttr(kvs, "safnari.system.groups", getFieldValue(data, "groups"))
-	kvs = appendInterfaceAttr(kvs, "safnari.system.admins", getFieldValue(data, "admins"))
-	kvs = appendInterfaceAttr(kvs, "safnari.system.scheduled_tasks", getFieldValue(data, "scheduled_tasks"))
-	kvs = appendInterfaceAttr(kvs, "safnari.system.running_processes", getFieldValue(data, "running_processes"))
+	if policy.includeSensitive {
+		kvs = appendInterfaceAttr(kvs, "safnari.system.installed_patches", getFieldValue(data, "installed_patches"))
+		kvs = appendInterfaceAttr(kvs, "safnari.system.startup_programs", getFieldValue(data, "startup_programs"))
+		kvs = appendInterfaceAttr(kvs, "safnari.system.installed_apps", getFieldValue(data, "installed_apps"))
+		kvs = appendInterfaceAttr(kvs, "safnari.system.network_interfaces", getFieldValue(data, "network_interfaces"))
+		kvs = appendInterfaceAttr(kvs, "safnari.system.open_connections", getFieldValue(data, "open_connections"))
+		kvs = appendInterfaceAttr(kvs, "safnari.system.running_services", getFieldValue(data, "running_services"))
+		kvs = appendInterfaceAttr(kvs, "safnari.system.users", getFieldValue(data, "users"))
+		kvs = appendInterfaceAttr(kvs, "safnari.system.groups", getFieldValue(data, "groups"))
+		kvs = appendInterfaceAttr(kvs, "safnari.system.admins", getFieldValue(data, "admins"))
+		kvs = appendInterfaceAttr(kvs, "safnari.system.scheduled_tasks", getFieldValue(data, "scheduled_tasks"))
+		kvs = appendInterfaceAttr(kvs, "safnari.system.running_processes", getFieldValue(data, "running_processes"))
+	}
 
-	kvs = appendCountAttr(kvs, "safnari.system.installed_patches_count", getSliceLength(data, "installed_patches"))
-	kvs = appendCountAttr(kvs, "safnari.system.startup_programs_count", getSliceLength(data, "startup_programs"))
-	kvs = appendCountAttr(kvs, "safnari.system.installed_apps_count", getSliceLength(data, "installed_apps"))
-	kvs = appendCountAttr(kvs, "safnari.system.network_interfaces_count", getSliceLength(data, "network_interfaces"))
-	kvs = appendCountAttr(kvs, "safnari.system.open_connections_count", getSliceLength(data, "open_connections"))
-	kvs = appendCountAttr(kvs, "safnari.system.running_services_count", getSliceLength(data, "running_services"))
-	kvs = appendCountAttr(kvs, "safnari.system.users_count", getSliceLength(data, "users"))
-	kvs = appendCountAttr(kvs, "safnari.system.groups_count", getSliceLength(data, "groups"))
-	kvs = appendCountAttr(kvs, "safnari.system.admins_count", getSliceLength(data, "admins"))
-	kvs = appendCountAttr(kvs, "safnari.system.scheduled_tasks_count", getSliceLength(data, "scheduled_tasks"))
-	kvs = appendCountAttr(kvs, "safnari.system.running_processes_count", getSliceLength(data, "running_processes"))
+	kvs = appendCountAttr(
+		kvs,
+		"safnari.system.installed_patches_count",
+		getCountFieldOrSliceLength(data, "installed_patches_count", "installed_patches"),
+	)
+	kvs = appendCountAttr(
+		kvs,
+		"safnari.system.startup_programs_count",
+		getCountFieldOrSliceLength(data, "startup_programs_count", "startup_programs"),
+	)
+	kvs = appendCountAttr(
+		kvs,
+		"safnari.system.installed_apps_count",
+		getCountFieldOrSliceLength(data, "installed_apps_count", "installed_apps"),
+	)
+	kvs = appendCountAttr(
+		kvs,
+		"safnari.system.network_interfaces_count",
+		getCountFieldOrSliceLength(data, "network_interfaces_count", "network_interfaces"),
+	)
+	kvs = appendCountAttr(
+		kvs,
+		"safnari.system.open_connections_count",
+		getCountFieldOrSliceLength(data, "open_connections_count", "open_connections"),
+	)
+	kvs = appendCountAttr(
+		kvs,
+		"safnari.system.running_services_count",
+		getCountFieldOrSliceLength(data, "running_services_count", "running_services"),
+	)
+	kvs = appendCountAttr(
+		kvs,
+		"safnari.system.users_count",
+		getCountFieldOrSliceLength(data, "users_count", "users"),
+	)
+	kvs = appendCountAttr(
+		kvs,
+		"safnari.system.groups_count",
+		getCountFieldOrSliceLength(data, "groups_count", "groups"),
+	)
+	kvs = appendCountAttr(
+		kvs,
+		"safnari.system.admins_count",
+		getCountFieldOrSliceLength(data, "admins_count", "admins"),
+	)
+	kvs = appendCountAttr(
+		kvs,
+		"safnari.system.scheduled_tasks_count",
+		getCountFieldOrSliceLength(data, "scheduled_tasks_count", "scheduled_tasks"),
+	)
+	kvs = appendCountAttr(
+		kvs,
+		"safnari.system.running_processes_count",
+		getCountFieldOrSliceLength(data, "running_processes_count", "running_processes"),
+	)
 
 	return kvs
 }
@@ -523,6 +690,13 @@ func getSliceLength(values map[string]interface{}, key string) int64 {
 	default:
 		return 0
 	}
+}
+
+func getCountFieldOrSliceLength(values map[string]interface{}, countKey, sliceKey string) int64 {
+	if count, ok := getInt64Field(values, countKey); ok {
+		return count
+	}
+	return getSliceLength(values, sliceKey)
 }
 
 func appendStringAttr(kvs []otelLog.KeyValue, key, value string) []otelLog.KeyValue {

@@ -203,6 +203,9 @@ func TestOtelFlags(t *testing.T) {
 	os.Args = []string{
 		"cmd",
 		"--otel-endpoint", "https://otel.example.com/v1/logs",
+		"--otel-export-paths",
+		"--otel-export-sensitive",
+		"--otel-export-cmdline",
 		"--otel-headers", "Authorization=Bearer test,Env=prod",
 		"--otel-service-name", "safnari-agent",
 		"--otel-timeout", "10s",
@@ -220,7 +223,27 @@ func TestOtelFlags(t *testing.T) {
 	if cfg.OtelTimeout != 10*time.Second {
 		t.Fatalf("unexpected otel timeout: %v", cfg.OtelTimeout)
 	}
+	if !cfg.OtelExportPaths || !cfg.OtelExportSensitive || !cfg.OtelExportCmdline {
+		t.Fatalf("expected otel export flags to be enabled: %+v", cfg)
+	}
 	if cfg.OtelHeaders["Authorization"] != "Bearer test" || cfg.OtelHeaders["Env"] != "prod" {
 		t.Fatalf("unexpected otel headers: %v", cfg.OtelHeaders)
+	}
+}
+
+func TestDefaultSkipCountEnabled(t *testing.T) {
+	oldArgs := os.Args
+	defer func() { os.Args = oldArgs }()
+	oldFlag := flag.CommandLine
+	flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ExitOnError)
+	defer func() { flag.CommandLine = oldFlag }()
+
+	os.Args = []string{"cmd"}
+	cfg, err := LoadConfig()
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if !cfg.SkipCount {
+		t.Fatal("expected skip-count default to be enabled")
 	}
 }

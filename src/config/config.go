@@ -45,6 +45,9 @@ type Config struct {
 	LastScanFile        string            `json:"last_scan_file"`
 	LastScanTime        string            `json:"last_scan_time"`
 	SkipCount           bool              `json:"skip_count"`
+	SensitiveMaxPerType int               `json:"sensitive_max_matches_per_type"`
+	SensitiveMaxTotal   int               `json:"sensitive_max_total_matches"`
+	MetadataMaxBytes    int64             `json:"metadata_max_bytes"`
 	RedactSensitive     string            `json:"redact_sensitive"`
 	CollectXattrs       bool              `json:"collect_xattrs"`
 	XattrMaxValueSize   int               `json:"xattr_max_value_size"`
@@ -58,9 +61,13 @@ type Config struct {
 	AutoTuneInterval    time.Duration     `json:"auto_tune_interval"`
 	AutoTuneTargetCPU   float64           `json:"auto_tune_target_cpu"`
 	OtelEndpoint        string            `json:"otel_endpoint"`
+	OtelFromEnv         bool              `json:"otel_from_env"`
 	OtelHeaders         map[string]string `json:"otel_headers"`
 	OtelServiceName     string            `json:"otel_service_name"`
 	OtelTimeout         time.Duration     `json:"otel_timeout"`
+	OtelExportPaths     bool              `json:"otel_export_paths"`
+	OtelExportSensitive bool              `json:"otel_export_sensitive"`
+	OtelExportCmdline   bool              `json:"otel_export_cmdline"`
 	TraceFlight         bool              `json:"trace_flight"`
 	TraceFlightFile     string            `json:"trace_flight_file"`
 	TraceFlightMaxBytes uint64            `json:"trace_flight_max_bytes"`
@@ -96,7 +103,10 @@ func LoadConfig() (*Config, error) {
 		FuzzyMaxSize:        20 * 1024 * 1024,
 		DeltaScan:           false,
 		LastScanFile:        ".safnari_last_scan",
-		SkipCount:           false,
+		SkipCount:           true,
+		SensitiveMaxPerType: 100,
+		SensitiveMaxTotal:   1000,
+		MetadataMaxBytes:    1 * 1024 * 1024,
 		RedactSensitive:     "mask",
 		CollectXattrs:       true,
 		XattrMaxValueSize:   1024,
@@ -110,9 +120,13 @@ func LoadConfig() (*Config, error) {
 		AutoTuneInterval:    5 * time.Second,
 		AutoTuneTargetCPU:   60,
 		OtelEndpoint:        "",
+		OtelFromEnv:         false,
 		OtelHeaders:         map[string]string{},
 		OtelServiceName:     "safnari",
 		OtelTimeout:         5 * time.Second,
+		OtelExportPaths:     false,
+		OtelExportSensitive: false,
+		OtelExportCmdline:   false,
 		TraceFlight:         false,
 		TraceFlightFile:     "trace-flight.out",
 		TraceFlightMaxBytes: 0,
@@ -138,6 +152,30 @@ func LoadConfig() (*Config, error) {
 	logLevel := flag.String("log-level", cfg.LogLevel, fmt.Sprintf("Log level: debug, info, warn, error, fatal, or panic (default: %s).", cfg.LogLevel))
 	maxIO := flag.Int("max-io-per-second", cfg.MaxIOPerSecond, fmt.Sprintf("Maximum disk I/O operations per second (default: %d).", cfg.MaxIOPerSecond))
 	skipCount := flag.Bool("skip-count", cfg.SkipCount, "Skip initial file counting to start scanning immediately")
+	sensitiveMaxPerType := flag.Int(
+		"sensitive-max-matches-per-type",
+		cfg.SensitiveMaxPerType,
+		fmt.Sprintf(
+			"Maximum sensitive matches stored per type per file (default: %d, 0 means unlimited).",
+			cfg.SensitiveMaxPerType,
+		),
+	)
+	sensitiveMaxTotal := flag.Int(
+		"sensitive-max-total-matches",
+		cfg.SensitiveMaxTotal,
+		fmt.Sprintf(
+			"Maximum total sensitive matches stored per file (default: %d, 0 means unlimited).",
+			cfg.SensitiveMaxTotal,
+		),
+	)
+	metadataMaxBytes := flag.Int64(
+		"metadata-max-bytes",
+		cfg.MetadataMaxBytes,
+		fmt.Sprintf(
+			"Maximum bytes metadata parsers may read/decode per file (default: %d, 0 means unlimited).",
+			cfg.MetadataMaxBytes,
+		),
+	)
 	configFile := flag.String("config", "", "Path to JSON configuration file (default: none).")
 	extendedProcessInfo := flag.Bool("extended-process-info", cfg.ExtendedProcessInfo, fmt.Sprintf("Gather extended process information (requires elevated privileges) (default: %t).", cfg.ExtendedProcessInfo))
 	includeDataTypes := flag.String("include-sensitive-data-types", "", "Comma-separated list of sensitive data types to include when scanning (default: none). Use 'all' to include all built-in types.")
@@ -163,9 +201,13 @@ func LoadConfig() (*Config, error) {
 	autoTuneInterval := flag.Duration("auto-tune-interval", cfg.AutoTuneInterval, "Auto-tune interval (default: 5s).")
 	autoTuneTargetCPU := flag.Float64("auto-tune-target-cpu", cfg.AutoTuneTargetCPU, "Auto-tune target CPU percent (default: 60).")
 	otelEndpoint := flag.String("otel-endpoint", cfg.OtelEndpoint, "OTLP/HTTP logs endpoint (default: none).")
+	otelFromEnv := flag.Bool("otel-from-env", cfg.OtelFromEnv, "Allow OTEL endpoint fallback from OTEL environment variables (default: false).")
 	otelHeaders := flag.String("otel-headers", "", "Comma-separated OTEL headers (key=value) for export (default: none).")
 	otelServiceName := flag.String("otel-service-name", cfg.OtelServiceName, "OTEL service name for export (default: safnari).")
 	otelTimeout := flag.Duration("otel-timeout", cfg.OtelTimeout, "OTEL export timeout (default: 5s).")
+	otelExportPaths := flag.Bool("otel-export-paths", cfg.OtelExportPaths, "Include raw file/executable paths in OTEL payloads (default: false).")
+	otelExportSensitive := flag.Bool("otel-export-sensitive", cfg.OtelExportSensitive, "Include sensitive_data and detailed system inventories in OTEL payloads (default: false).")
+	otelExportCmdline := flag.Bool("otel-export-cmdline", cfg.OtelExportCmdline, "Include process command lines in OTEL payloads (default: false).")
 	traceFlight := flag.Bool("trace-flight", cfg.TraceFlight, fmt.Sprintf("Enable flight recorder tracing (default: %t).", cfg.TraceFlight))
 	traceFlightFile := flag.String("trace-flight-file", cfg.TraceFlightFile, fmt.Sprintf("Flight recorder output file (default: %s).", cfg.TraceFlightFile))
 	traceFlightMaxBytes := flag.Uint64("trace-flight-max-bytes", cfg.TraceFlightMaxBytes, "Max bytes for flight recorder buffer (default: 0 for runtime default).")
@@ -251,6 +293,12 @@ func LoadConfig() (*Config, error) {
 			cfg.LastScanTime = *lastScanTime
 		case "skip-count":
 			cfg.SkipCount = *skipCount
+		case "sensitive-max-matches-per-type":
+			cfg.SensitiveMaxPerType = *sensitiveMaxPerType
+		case "sensitive-max-total-matches":
+			cfg.SensitiveMaxTotal = *sensitiveMaxTotal
+		case "metadata-max-bytes":
+			cfg.MetadataMaxBytes = *metadataMaxBytes
 		case "redact-sensitive":
 			cfg.RedactSensitive = strings.ToLower(*redactSensitive)
 		case "collect-xattrs":
@@ -277,12 +325,20 @@ func LoadConfig() (*Config, error) {
 			cfg.AutoTuneTargetCPU = *autoTuneTargetCPU
 		case "otel-endpoint":
 			cfg.OtelEndpoint = strings.TrimSpace(*otelEndpoint)
+		case "otel-from-env":
+			cfg.OtelFromEnv = *otelFromEnv
 		case "otel-headers":
 			cfg.OtelHeaders = parseHeaders(*otelHeaders)
 		case "otel-service-name":
 			cfg.OtelServiceName = strings.TrimSpace(*otelServiceName)
 		case "otel-timeout":
 			cfg.OtelTimeout = *otelTimeout
+		case "otel-export-paths":
+			cfg.OtelExportPaths = *otelExportPaths
+		case "otel-export-sensitive":
+			cfg.OtelExportSensitive = *otelExportSensitive
+		case "otel-export-cmdline":
+			cfg.OtelExportCmdline = *otelExportCmdline
 		case "trace-flight":
 			cfg.TraceFlight = *traceFlight
 		case "trace-flight-file":
@@ -405,6 +461,15 @@ func (cfg *Config) validate() error {
 	}
 	if cfg.MaxIOPerSecond < 0 {
 		return fmt.Errorf("max-io-per-second must be zero or positive")
+	}
+	if cfg.SensitiveMaxPerType < 0 {
+		return fmt.Errorf("sensitive-max-matches-per-type must be zero or positive")
+	}
+	if cfg.SensitiveMaxTotal < 0 {
+		return fmt.Errorf("sensitive-max-total-matches must be zero or positive")
+	}
+	if cfg.MetadataMaxBytes < 0 {
+		return fmt.Errorf("metadata-max-bytes must be zero or positive")
 	}
 	if cfg.ConcurrencyLevel <= 0 {
 		return fmt.Errorf("concurrency level must be positive")

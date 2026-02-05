@@ -55,7 +55,7 @@ func WriteFlightRecorder(path string) error {
 	if flightRecorder == nil || !flightRecorder.Enabled() {
 		return nil
 	}
-	f, err := os.Create(path)
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0600)
 	if err != nil {
 		return err
 	}

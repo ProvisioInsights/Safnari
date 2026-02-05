@@ -15,7 +15,7 @@ var flightRecorder *trace.FlightRecorder
 // Start enables runtime tracing and writes trace data to trace.out.
 func Start() error {
 	var err error
-	traceFile, err = os.Create("trace.out")
+	traceFile, err = os.OpenFile("trace.out", os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0600)
 	if err != nil {
 		return err
 	}
@@ -72,7 +72,7 @@ func WriteFlightRecorder(path string) error {
 	if flightRecorder == nil || !flightRecorder.Enabled() {
 		return nil
 	}
-	f, err := os.Create(path)
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0600)
 	if err != nil {
 		return err
 	}

@@ -10,7 +10,7 @@ func TestExtractMetadata(t *testing.T) {
 		"unknown",
 	}
 	for _, mime := range cases {
-		meta := ExtractMetadata("", mime)
+		meta := ExtractMetadata("", mime, 1024)
 		if meta == nil {
 			t.Fatalf("metadata map nil for %s", mime)
 		}

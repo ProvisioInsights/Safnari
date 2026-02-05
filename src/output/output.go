@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 
 	"safnari/config"
 	"safnari/logger"
@@ -37,7 +38,16 @@ type Writer struct {
 	ext     string
 	index   int
 	format  string
+
+	bytesWritten     int64
+	recordsSinceSync int
+	lastSyncAt       time.Time
 }
+
+const (
+	flushEveryRecords = 64
+	flushMaxInterval  = 500 * time.Millisecond
+)
 
 func New(cfg *config.Config, sysInfo *systeminfo.SystemInfo, m *Metrics) (*Writer, error) {
 	ext := filepath.Ext(cfg.OutputFileName)
@@ -67,6 +77,12 @@ func New(cfg *config.Config, sysInfo *systeminfo.SystemInfo, m *Metrics) (*Write
 			logger.Warnf("OTEL export disabled: %v", err)
 		} else {
 			w.otel = otel
+			if otel != nil {
+				logger.Warnf("OTEL export enabled for endpoint: %s", otel.Endpoint())
+				if strings.HasPrefix(strings.ToLower(otel.Endpoint()), "http://") {
+					logger.Warn("OTEL export is using http://; transport is not encrypted.")
+				}
+			}
 		}
 	}
 	if err := w.openFile(); err != nil {
@@ -92,6 +108,9 @@ func (w *Writer) openFile() error {
 	w.buf = bufio.NewWriterSize(f, 1024*1024)
 	w.csvw = nil
 	w.first = true
+	w.bytesWritten = 0
+	w.recordsSinceSync = 0
+	w.lastSyncAt = time.Now()
 
 	switch w.format {
 	case "csv":
@@ -100,7 +119,7 @@ func (w *Writer) openFile() error {
 			return err
 		}
 	default:
-		if _, err := w.buf.WriteString("{\n"); err != nil {
+		if err := w.writeString("{\n"); err != nil {
 			return err
 		}
 		if err := w.writeHeader(); err != nil {
@@ -111,26 +130,26 @@ func (w *Writer) openFile() error {
 }
 
 func (w *Writer) writeHeader() error {
-	if _, err := w.buf.WriteString("  \"schema_version\": "); err != nil {
+	if err := w.writeString("  \"schema_version\": "); err != nil {
 		return err
 	}
-	if _, err := w.buf.WriteString(fmt.Sprintf("%q", SchemaVersion)); err != nil {
+	if err := w.writeString(fmt.Sprintf("%q", SchemaVersion)); err != nil {
 		return err
 	}
-	if _, err := w.buf.WriteString(",\n"); err != nil {
+	if err := w.writeString(",\n"); err != nil {
 		return err
 	}
 	sysBytes, err := jsonMarshalIndent(w.sysInfo, "  ", "  ")
 	if err != nil {
 		return err
 	}
-	if _, err := w.buf.WriteString("  \"system_info\": "); err != nil {
+	if err := w.writeString("  \"system_info\": "); err != nil {
 		return err
 	}
-	if _, err := w.buf.Write(sysBytes); err != nil {
+	if err := w.writeBytes(sysBytes); err != nil {
 		return err
 	}
-	if _, err := w.buf.WriteString(",\n"); err != nil {
+	if err := w.writeString(",\n"); err != nil {
 		return err
 	}
 
@@ -138,17 +157,17 @@ func (w *Writer) writeHeader() error {
 	if err != nil {
 		return err
 	}
-	if _, err := w.buf.WriteString("  \"processes\": "); err != nil {
+	if err := w.writeString("  \"processes\": "); err != nil {
 		return err
 	}
-	if _, err := w.buf.Write(procBytes); err != nil {
+	if err := w.writeBytes(procBytes); err != nil {
 		return err
 	}
-	if _, err := w.buf.WriteString(",\n"); err != nil {
+	if err := w.writeString(",\n"); err != nil {
 		return err
 	}
 
-	if _, err := w.buf.WriteString("  \"files\": [\n"); err != nil {
+	if err := w.writeString("  \"files\": [\n"); err != nil {
 		return err
 	}
 	return nil
@@ -165,12 +184,12 @@ func (w *Writer) WriteData(data map[string]interface{}) {
 		}
 	default:
 		if !w.first {
-			_, _ = w.buf.WriteString(",\n")
+			_ = w.writeString(",\n")
 		}
 		bytes, err := jsonMarshalIndent(data, "    ", "  ")
 		if err == nil {
-			_, _ = w.buf.WriteString("    ")
-			_, _ = w.buf.Write(bytes)
+			_ = w.writeString("    ")
+			_ = w.writeBytes(bytes)
 		}
 		w.first = false
 	}
@@ -179,10 +198,25 @@ func (w *Writer) WriteData(data map[string]interface{}) {
 	}
 	w.emitRecordLocked("file", data)
 
-	w.flush()
+	w.recordsSinceSync++
+	if w.shouldSync() {
+		w.flush()
+		w.recordsSinceSync = 0
+		w.lastSyncAt = time.Now()
+	}
 
 	if w.cfg.MaxOutputFileSize > 0 {
-		if info, err := w.file.Stat(); err == nil && info.Size() >= w.cfg.MaxOutputFileSize {
+		rotate := false
+		if w.format == "csv" {
+			// CSV writes are buffered and size is not tracked precisely; sync before checking.
+			w.flush()
+			if info, err := w.file.Stat(); err == nil && info.Size() >= w.cfg.MaxOutputFileSize {
+				rotate = true
+			}
+		} else if w.bytesWritten >= w.cfg.MaxOutputFileSize {
+			rotate = true
+		}
+		if rotate {
 			w.rotate()
 		}
 	}
@@ -226,15 +260,15 @@ func (w *Writer) closeFile() {
 		}
 		w.flush()
 	default:
-		_, _ = w.buf.WriteString("\n  ]")
+		_ = w.writeString("\n  ]")
 		if w.metrics != nil {
 			mBytes, err := jsonMarshalIndent(w.metrics, "  ", "  ")
 			if err == nil {
-				_, _ = w.buf.WriteString(",\n  \"metrics\": ")
-				_, _ = w.buf.Write(mBytes)
+				_ = w.writeString(",\n  \"metrics\": ")
+				_ = w.writeBytes(mBytes)
 			}
 		}
-		_, _ = w.buf.WriteString("\n}\n")
+		_ = w.writeString("\n}\n")
 		w.flush()
 	}
 	_ = w.file.Sync()
@@ -354,8 +388,35 @@ func (w *Writer) writeCSVRow(recordType string, data map[string]interface{}, sys
 	if err := w.csvw.Write(row); err != nil {
 		return err
 	}
-	w.csvw.Flush()
-	return w.csvw.Error()
+	return nil
+}
+
+func (w *Writer) writeString(s string) error {
+	if w.buf == nil {
+		return nil
+	}
+	n, err := w.buf.WriteString(s)
+	w.bytesWritten += int64(n)
+	return err
+}
+
+func (w *Writer) writeBytes(b []byte) error {
+	if w.buf == nil {
+		return nil
+	}
+	n, err := w.buf.Write(b)
+	w.bytesWritten += int64(n)
+	return err
+}
+
+func (w *Writer) shouldSync() bool {
+	if w.recordsSinceSync <= 1 {
+		return true
+	}
+	if w.recordsSinceSync >= flushEveryRecords {
+		return true
+	}
+	return time.Since(w.lastSyncAt) >= flushMaxInterval
 }
 
 func getField(data map[string]interface{}, key string) string {

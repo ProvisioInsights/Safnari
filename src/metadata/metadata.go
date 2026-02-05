@@ -3,6 +3,7 @@ package metadata
 import (
 	"archive/zip"
 	"encoding/xml"
+	"io"
 	"maps"
 	"os"
 	"time"
@@ -11,18 +12,18 @@ import (
 	"github.com/rwcarlsen/goexif/exif"
 )
 
-func ExtractMetadata(path string, mimeType string) map[string]interface{} {
+func ExtractMetadata(path string, mimeType string, maxBytes int64) map[string]interface{} {
 	metadata := make(map[string]interface{})
 
 	switch mimeType {
 	case "image/jpeg", "image/png":
-		meta := extractImageMetadata(path)
+		meta := extractImageMetadata(path, maxBytes)
 		maps.Copy(metadata, meta)
 	case "application/pdf":
-		meta := extractPDFMetadata(path)
+		meta := extractPDFMetadata(path, maxBytes)
 		maps.Copy(metadata, meta)
 	case "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
-		meta := extractDOCXMetadata(path)
+		meta := extractDOCXMetadata(path, maxBytes)
 		maps.Copy(metadata, meta)
 	default:
 		// Unsupported MIME type for metadata extraction
@@ -32,14 +33,18 @@ func ExtractMetadata(path string, mimeType string) map[string]interface{} {
 }
 
 // extractImageMetadata extracts a subset of EXIF tags from images.
-func extractImageMetadata(path string) map[string]interface{} {
+func extractImageMetadata(path string, maxBytes int64) map[string]interface{} {
 	f, err := os.Open(path)
 	if err != nil {
 		return nil
 	}
 	defer f.Close()
 
-	x, err := exif.Decode(f)
+	var reader io.Reader = f
+	if maxBytes > 0 {
+		reader = io.LimitReader(f, maxBytes)
+	}
+	x, err := exif.Decode(reader)
 	if err != nil {
 		return nil
 	}
@@ -58,7 +63,13 @@ func extractImageMetadata(path string) map[string]interface{} {
 }
 
 // extractPDFMetadata reads standard PDF document information.
-func extractPDFMetadata(path string) map[string]interface{} {
+func extractPDFMetadata(path string, maxBytes int64) map[string]interface{} {
+	if maxBytes > 0 {
+		info, err := os.Stat(path)
+		if err != nil || info.Size() > maxBytes {
+			return nil
+		}
+	}
 	f, err := os.Open(path)
 	if err != nil {
 		return nil
@@ -87,7 +98,7 @@ func extractPDFMetadata(path string) map[string]interface{} {
 }
 
 // extractDOCXMetadata parses core properties from a DOCX file.
-func extractDOCXMetadata(path string) map[string]interface{} {
+func extractDOCXMetadata(path string, maxBytes int64) map[string]interface{} {
 	r, err := zip.OpenReader(path)
 	if err != nil {
 		return nil
@@ -97,6 +108,9 @@ func extractDOCXMetadata(path string) map[string]interface{} {
 	var coreFile *zip.File
 	for _, f := range r.File {
 		if f.Name == "docProps/core.xml" {
+			if maxBytes > 0 && f.UncompressedSize64 > uint64(maxBytes) {
+				return nil
+			}
 			coreFile = f
 			break
 		}
@@ -120,7 +134,11 @@ func extractDOCXMetadata(path string) map[string]interface{} {
 	}
 
 	var props coreProperties
-	if err := xml.NewDecoder(rc).Decode(&props); err != nil {
+	var reader io.Reader = rc
+	if maxBytes > 0 {
+		reader = io.LimitReader(rc, maxBytes)
+	}
+	if err := xml.NewDecoder(reader).Decode(&props); err != nil {
 		return nil
 	}
 

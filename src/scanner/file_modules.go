@@ -216,7 +216,7 @@ func (m metadataModule) Name() string { return "metadata" }
 func (m metadataModule) Enabled(cfg *config.Config) bool { return cfg.ScanFiles }
 
 func (m metadataModule) Collect(ctx context.Context, fc *FileContext, data map[string]interface{}) error {
-	meta := metadata.ExtractMetadata(fc.Path, fc.MimeType())
+	meta := metadata.ExtractMetadata(fc.Path, fc.MimeType(), fc.Cfg.MetadataMaxBytes)
 	data["metadata"] = meta
 	return nil
 }
@@ -271,10 +271,19 @@ func (m sensitiveModule) Collect(ctx context.Context, fc *FileContext, data map[
 	if err != nil {
 		return err
 	}
-	matches := scanForSensitiveData(content, fc.SensitivePatterns)
+	matches, counts := scanForSensitiveData(
+		content,
+		fc.SensitivePatterns,
+		fc.Cfg.SensitiveMaxPerType,
+		fc.Cfg.SensitiveMaxTotal,
+	)
 	if len(matches) > 0 {
 		matches = redactSensitiveData(matches, fc.Cfg.RedactSensitive)
 		data["sensitive_data"] = matches
+		data["sensitive_data_match_counts"] = counts
+		if sensitiveMatchesMayBeTruncated(counts, fc.Cfg.SensitiveMaxPerType, fc.Cfg.SensitiveMaxTotal) {
+			data["sensitive_data_truncated"] = true
+		}
 	}
 	return nil
 }
@@ -324,6 +333,26 @@ func buildFuzzyHashers(cfg *config.Config) []fuzzy.Hasher {
 
 func getFileTimes(path string) (FileTimes, error) {
 	return fileTimes(path)
+}
+
+func sensitiveMatchesMayBeTruncated(counts map[string]int, perTypeLimit, totalLimit int) bool {
+	if perTypeLimit > 0 {
+		for _, count := range counts {
+			if count >= perTypeLimit {
+				return true
+			}
+		}
+	}
+	if totalLimit > 0 {
+		var total int
+		for _, count := range counts {
+			total += count
+		}
+		if total >= totalLimit {
+			return true
+		}
+	}
+	return false
 }
 
 var errNotSupported = errors.New("not supported")

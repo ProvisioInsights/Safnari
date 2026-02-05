@@ -45,7 +45,7 @@ func ProcessFile(ctx context.Context, path string, cfg *config.Config, w *output
 		return
 	}
 
-	if fileInfo.Size() > cfg.MaxFileSize {
+	if cfg.MaxFileSize > 0 && fileInfo.Size() > cfg.MaxFileSize {
 		logger.Debugf("Skipping large file %s", path)
 		return
 	}
@@ -217,10 +217,27 @@ func luhnValid(number string) bool {
 	return sum%10 == 0
 }
 
-func scanForSensitiveData(content string, patterns map[string]*regexp.Regexp) map[string][]string {
+func scanForSensitiveData(content string, patterns map[string]*regexp.Regexp, maxPerType, maxTotal int) (map[string][]string, map[string]int) {
 	matches := make(map[string][]string)
+	matchCounts := make(map[string]int)
+	remaining := maxTotal
+	limitTotal := maxTotal > 0
 	for dataType, pattern := range patterns {
-		found := pattern.FindAllString(content, -1)
+		if limitTotal && remaining <= 0 {
+			break
+		}
+		perTypeLimit := maxPerType
+		if perTypeLimit <= 0 {
+			perTypeLimit = -1
+		}
+		if limitTotal && (perTypeLimit < 0 || perTypeLimit > remaining) {
+			perTypeLimit = remaining
+		}
+		if perTypeLimit == 0 {
+			continue
+		}
+
+		found := pattern.FindAllString(content, perTypeLimit)
 		if dataType == "credit_card" {
 			filtered := []string{}
 			for _, f := range found {
@@ -228,14 +245,21 @@ func scanForSensitiveData(content string, patterns map[string]*regexp.Regexp) ma
 					filtered = append(filtered, f)
 				}
 			}
+			if perTypeLimit > 0 && len(filtered) > perTypeLimit {
+				filtered = filtered[:perTypeLimit]
+			}
 			found = filtered
 		}
 		if len(found) > 0 {
 			matches[dataType] = found
+			matchCounts[dataType] = len(found)
+			if limitTotal {
+				remaining -= len(found)
+			}
 		}
 	}
 
-	return matches
+	return matches, matchCounts
 }
 
 func redactSensitiveData(matches map[string][]string, mode string) map[string][]string {
