@@ -247,3 +247,138 @@ func TestDefaultSkipCountEnabled(t *testing.T) {
 		t.Fatal("expected skip-count default to be enabled")
 	}
 }
+
+func TestOptimizationFlags(t *testing.T) {
+	oldArgs := os.Args
+	defer func() { os.Args = oldArgs }()
+	oldFlag := flag.CommandLine
+	flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ExitOnError)
+	defer func() { flag.CommandLine = oldFlag }()
+
+	os.Args = []string{
+		"cmd",
+		"--perf-profile", "ultra",
+		"--sensitive-engine", "hybrid",
+		"--sensitive-longtail", "full",
+		"--sensitive-window-bytes", "8192",
+		"--content-read-mode", "mmap",
+		"--stream-chunk-size", "131072",
+		"--stream-overlap-bytes", "256",
+		"--mmap-min-size", "262144",
+		"--json-layout", "ndjson",
+		"--simd-fastpath",
+		"--auto-tune-runtime-metrics=false",
+		"--auto-tune-target-runq", "1.5",
+		"--auto-tune-target-latency-ms", "40",
+		"--diag-slow-scan-threshold", "3s",
+		"--diag-dir", "./diag-out",
+		"--diag-goroutine-leak",
+	}
+	cfg, err := LoadConfig()
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if cfg.PerfProfile != "ultra" {
+		t.Fatalf("unexpected perf profile: %s", cfg.PerfProfile)
+	}
+	if cfg.SensitiveEngine != "hybrid" {
+		t.Fatalf("unexpected sensitive engine: %s", cfg.SensitiveEngine)
+	}
+	if cfg.SensitiveLongtail != "full" {
+		t.Fatalf("unexpected sensitive longtail: %s", cfg.SensitiveLongtail)
+	}
+	if cfg.SensitiveWindowBytes != 8192 {
+		t.Fatalf("unexpected sensitive window bytes: %d", cfg.SensitiveWindowBytes)
+	}
+	if cfg.ContentReadMode != "mmap" {
+		t.Fatalf("unexpected content read mode: %s", cfg.ContentReadMode)
+	}
+	if cfg.StreamChunkSize != 131072 {
+		t.Fatalf("unexpected stream chunk size: %d", cfg.StreamChunkSize)
+	}
+	if cfg.StreamOverlapBytes != 256 {
+		t.Fatalf("unexpected stream overlap bytes: %d", cfg.StreamOverlapBytes)
+	}
+	if cfg.MmapMinSize != 262144 {
+		t.Fatalf("unexpected mmap min size: %d", cfg.MmapMinSize)
+	}
+	if cfg.JSONLayout != "ndjson" {
+		t.Fatalf("unexpected json layout: %s", cfg.JSONLayout)
+	}
+	if !cfg.SimdFastpath {
+		t.Fatal("expected simd-fastpath enabled")
+	}
+	if cfg.AutoTuneRuntimeMetrics {
+		t.Fatal("expected auto-tune-runtime-metrics disabled")
+	}
+	if cfg.AutoTuneTargetRunQ != 1.5 {
+		t.Fatalf("unexpected auto-tune-target-runq: %f", cfg.AutoTuneTargetRunQ)
+	}
+	if cfg.AutoTuneTargetLatencyMs != 40 {
+		t.Fatalf("unexpected auto-tune-target-latency-ms: %d", cfg.AutoTuneTargetLatencyMs)
+	}
+	if cfg.DiagSlowScanThreshold != 3*time.Second {
+		t.Fatalf("unexpected diag-slow-scan-threshold: %v", cfg.DiagSlowScanThreshold)
+	}
+	if cfg.DiagDir != "./diag-out" {
+		t.Fatalf("unexpected diag-dir: %s", cfg.DiagDir)
+	}
+	if !cfg.DiagGoroutineLeak {
+		t.Fatal("expected diag-goroutine-leak enabled")
+	}
+}
+
+func TestOptimizationFlagValidation(t *testing.T) {
+	cfg := &Config{
+		ScanFiles:               true,
+		ScanSensitive:           false,
+		ScanProcesses:           false,
+		CollectSystemInfo:       false,
+		StartPaths:              []string{"."},
+		OutputFormat:            "json",
+		ConcurrencyLevel:        1,
+		NiceLevel:               "medium",
+		LogLevel:                "info",
+		PerfProfile:             "adaptive",
+		SensitiveEngine:         "auto",
+		SensitiveLongtail:       "sampled",
+		SensitiveWindowBytes:    4096,
+		ContentReadMode:         "auto",
+		StreamChunkSize:         256 * 1024,
+		StreamOverlapBytes:      512,
+		JSONLayout:              "ndjson",
+		AutoTune:                false,
+		DiagDir:                 ".",
+		MmapMinSize:             1024,
+		AutoTuneTargetRunQ:      1,
+		AutoTuneTargetLatencyMs: 25,
+	}
+	cfg.PerfProfile = "bad"
+	if err := cfg.validate(); err == nil {
+		t.Fatal("expected invalid perf-profile error")
+	}
+
+	cfg.PerfProfile = "adaptive"
+	cfg.SensitiveEngine = "nope"
+	if err := cfg.validate(); err == nil {
+		t.Fatal("expected invalid sensitive-engine error")
+	}
+
+	cfg.SensitiveEngine = "auto"
+	cfg.SensitiveLongtail = "broken"
+	if err := cfg.validate(); err == nil {
+		t.Fatal("expected invalid sensitive-longtail error")
+	}
+
+	cfg.SensitiveLongtail = "sampled"
+	cfg.ContentReadMode = "broken"
+	if err := cfg.validate(); err == nil {
+		t.Fatal("expected invalid content-read-mode error")
+	}
+
+	cfg.ContentReadMode = "stream"
+	cfg.StreamOverlapBytes = cfg.StreamChunkSize
+	if err := cfg.validate(); err == nil {
+		t.Fatal("expected invalid stream-overlap-bytes error")
+	}
+}

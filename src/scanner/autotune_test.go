@@ -170,3 +170,72 @@ func TestPIDControllerOutputBounded(t *testing.T) {
 		t.Fatalf("expected bounded output >= -3, got %f", out)
 	}
 }
+
+func TestComputeAutoTuneDeltasRuntimeSignalsScaleUp(t *testing.T) {
+	cfg := &config.Config{
+		AutoTuneTargetCPU:       60,
+		AutoTuneInterval:        5 * time.Second,
+		NiceLevel:               "medium",
+		AutoTuneRuntimeMetrics:  true,
+		AutoTuneTargetRunQ:      1.0,
+		AutoTuneTargetLatencyMs: 25,
+	}
+	state := &autoTuneState{
+		concurrency: 2,
+		ioLimit:     400,
+		maxIOLimit:  3500,
+		cpuPID:      newCPUPIDController(cfg.NiceLevel),
+	}
+
+	telemetry := autoTuneTelemetry{
+		runtimeSampleFn: func() runtimeSignal {
+			return runtimeSignal{
+				runQueueRatio: 2.2,
+				latencySec:    0.120,
+				heapLiveBytes: 64 << 20,
+			}
+		},
+	}
+	concurrencyDelta, ioDelta := computeAutoTuneDeltas(cfg, state, 60, telemetry)
+	if concurrencyDelta <= 0 {
+		t.Fatalf("expected positive concurrency delta under runtime pressure, got %d", concurrencyDelta)
+	}
+	if ioDelta <= 0 {
+		t.Fatalf("expected positive io delta under runtime pressure, got %d", ioDelta)
+	}
+}
+
+func TestComputeAutoTuneDeltasRuntimeSignalsScaleDown(t *testing.T) {
+	cfg := &config.Config{
+		AutoTuneTargetCPU:       60,
+		AutoTuneInterval:        5 * time.Second,
+		NiceLevel:               "medium",
+		AutoTuneRuntimeMetrics:  true,
+		AutoTuneTargetRunQ:      1.2,
+		AutoTuneTargetLatencyMs: 40,
+	}
+	state := &autoTuneState{
+		concurrency:  6,
+		ioLimit:      1400,
+		maxIOLimit:   3500,
+		cpuPID:       newCPUPIDController(cfg.NiceLevel),
+		heapLiveEWMA: float64(64 << 20),
+	}
+
+	telemetry := autoTuneTelemetry{
+		runtimeSampleFn: func() runtimeSignal {
+			return runtimeSignal{
+				runQueueRatio: 0.15,
+				latencySec:    0.003,
+				heapLiveBytes: 190 << 20,
+			}
+		},
+	}
+	concurrencyDelta, ioDelta := computeAutoTuneDeltas(cfg, state, 60, telemetry)
+	if concurrencyDelta >= 0 {
+		t.Fatalf("expected negative concurrency delta under low runtime pressure + heap growth, got %d", concurrencyDelta)
+	}
+	if ioDelta >= 0 {
+		t.Fatalf("expected negative io delta under low runtime pressure + heap growth, got %d", ioDelta)
+	}
+}

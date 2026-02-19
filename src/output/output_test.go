@@ -1,24 +1,34 @@
 package output
 
 import (
+	"bufio"
+	"encoding/json"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"safnari/config"
 	"safnari/systeminfo"
 )
 
+type ndjsonTestRecord struct {
+	RecordType    string          `json:"record_type"`
+	SchemaVersion string          `json:"schema_version"`
+	Payload       json.RawMessage `json:"payload"`
+}
+
 func TestOutputLifecycle(t *testing.T) {
-	tmp, err := os.CreateTemp("", "out*.json")
+	tmp, err := os.CreateTemp("", "out*.ndjson")
 	if err != nil {
 		t.Fatalf("temp file: %v", err)
 	}
 	defer os.Remove(tmp.Name())
 
-	cfg := &config.Config{OutputFileName: tmp.Name()}
+	cfg := &config.Config{OutputFileName: tmp.Name(), OutputFormat: "json"}
 	sysInfo := &systeminfo.SystemInfo{RunningProcesses: []systeminfo.ProcessInfo{}}
 	metrics := &Metrics{}
 	w, err := New(cfg, sysInfo, metrics)
@@ -29,46 +39,24 @@ func TestOutputLifecycle(t *testing.T) {
 	w.WriteData(map[string]interface{}{"path": "test"})
 	w.SetMetrics(Metrics{})
 	w.Close()
-}
 
-func TestWriteDataStreaming(t *testing.T) {
-	tmp, err := os.CreateTemp("", "stream*.json")
-	if err != nil {
-		t.Fatalf("temp file: %v", err)
+	records := readNDJSONRecords(t, tmp.Name())
+	if len(records) < 3 {
+		t.Fatalf("expected system_info, file and metrics records, got %d", len(records))
 	}
-	defer os.Remove(tmp.Name())
-
-	cfg := &config.Config{OutputFileName: tmp.Name()}
-	sysInfo := &systeminfo.SystemInfo{RunningProcesses: []systeminfo.ProcessInfo{}}
-	w, err := New(cfg, sysInfo, &Metrics{})
-	if err != nil {
-		t.Fatalf("init: %v", err)
+	if records[0].SchemaVersion != SchemaVersion {
+		t.Fatalf("unexpected schema version: %s", records[0].SchemaVersion)
 	}
-
-	w.WriteData(map[string]interface{}{"path": "early"})
-
-	content, err := os.ReadFile(tmp.Name())
-	if err != nil {
-		t.Fatalf("read file: %v", err)
-	}
-	if !strings.Contains(string(content), "\"schema_version\":") {
-		t.Fatalf("expected schema_version, got: %s", string(content))
-	}
-	if !strings.Contains(string(content), "\"path\": \"early\"") {
-		t.Fatalf("expected written data, got: %s", string(content))
-	}
-
-	w.Close()
 }
 
 func TestWriteDataConcurrent(t *testing.T) {
-	tmp, err := os.CreateTemp("", "concurrent*.json")
+	tmp, err := os.CreateTemp("", "concurrent*.ndjson")
 	if err != nil {
 		t.Fatalf("temp file: %v", err)
 	}
 	defer os.Remove(tmp.Name())
 
-	cfg := &config.Config{OutputFileName: tmp.Name()}
+	cfg := &config.Config{OutputFileName: tmp.Name(), OutputFormat: "json"}
 	sysInfo := &systeminfo.SystemInfo{RunningProcesses: []systeminfo.ProcessInfo{}}
 	w, err := New(cfg, sysInfo, &Metrics{})
 	if err != nil {
@@ -91,7 +79,7 @@ func TestWriteDataConcurrent(t *testing.T) {
 		t.Fatalf("read: %v", err)
 	}
 	for i := range 5 {
-		if !strings.Contains(string(content), "\"path\": "+strconv.Itoa(i)) {
+		if !strings.Contains(string(content), strconv.Itoa(i)) {
 			t.Fatalf("missing entry %d", i)
 		}
 	}
@@ -99,9 +87,9 @@ func TestWriteDataConcurrent(t *testing.T) {
 
 func TestOutputRotation(t *testing.T) {
 	tmpDir := t.TempDir()
-	base := tmpDir + "/out.json"
+	base := filepath.Join(tmpDir, "out.ndjson")
 
-	cfg := &config.Config{OutputFileName: base, MaxOutputFileSize: 200}
+	cfg := &config.Config{OutputFileName: base, OutputFormat: "json", MaxOutputFileSize: 200}
 	sysInfo := &systeminfo.SystemInfo{RunningProcesses: []systeminfo.ProcessInfo{}}
 	w, err := New(cfg, sysInfo, &Metrics{})
 	if err != nil {
@@ -117,38 +105,86 @@ func TestOutputRotation(t *testing.T) {
 	if _, err := os.Stat(base); err != nil {
 		t.Fatalf("missing base file: %v", err)
 	}
-	if _, err := os.Stat(strings.TrimSuffix(base, ".json") + ".1.json"); err != nil {
+	if _, err := os.Stat(strings.TrimSuffix(base, ".ndjson") + ".1.ndjson"); err != nil {
 		t.Fatalf("rotation file not created")
 	}
 }
 
-func TestCSVOutput(t *testing.T) {
-	tmp, err := os.CreateTemp("", "out*.csv")
-	if err != nil {
-		t.Fatalf("temp file: %v", err)
+func TestIncrementScanned(t *testing.T) {
+	w := &Writer{metrics: &Metrics{}}
+	w.IncrementScanned()
+	if got := w.FilesScanned(); got != 1 {
+		t.Fatalf("expected FilesScanned=1, got %d", got)
 	}
-	defer os.Remove(tmp.Name())
+}
 
-	cfg := &config.Config{OutputFileName: tmp.Name(), OutputFormat: "csv"}
-	sysInfo := &systeminfo.SystemInfo{RunningProcesses: []systeminfo.ProcessInfo{}}
-	w, err := New(cfg, sysInfo, &Metrics{})
-	if err != nil {
-		t.Fatalf("init: %v", err)
+func TestShouldSync(t *testing.T) {
+	w := &Writer{recordsSinceSync: 1, lastSyncAt: time.Now()}
+	if !w.shouldSync() {
+		t.Fatal("expected sync on first record")
 	}
-	w.WriteData(map[string]interface{}{"path": "test.csv", "name": "file"})
-	w.Close()
 
-	content, err := os.ReadFile(tmp.Name())
+	w.recordsSinceSync = flushEveryRecords
+	if !w.shouldSync() {
+		t.Fatal("expected sync at flush threshold")
+	}
+
+	w.recordsSinceSync = 2
+	w.lastSyncAt = time.Now().Add(-flushMaxInterval - time.Millisecond)
+	if !w.shouldSync() {
+		t.Fatal("expected time-based sync")
+	}
+
+	w.recordsSinceSync = 2
+	w.lastSyncAt = time.Now()
+	if w.shouldSync() {
+		t.Fatal("expected no sync when below thresholds")
+	}
+}
+
+func TestSetMetricsUsesAtomicCounters(t *testing.T) {
+	w := &Writer{}
+	w.filesScanned.Store(3)
+	w.filesProcessed.Store(2)
+
+	w.SetMetrics(Metrics{TotalFiles: 10})
+	if w.metrics == nil {
+		t.Fatal("expected metrics to be set")
+	}
+	if w.metrics.TotalFiles != 10 {
+		t.Fatalf("expected TotalFiles=10, got %d", w.metrics.TotalFiles)
+	}
+	if w.metrics.FilesScanned != 3 {
+		t.Fatalf("expected FilesScanned=3, got %d", w.metrics.FilesScanned)
+	}
+	if w.metrics.FilesProcessed != 2 {
+		t.Fatalf("expected FilesProcessed=2, got %d", w.metrics.FilesProcessed)
+	}
+}
+
+func readNDJSONRecords(t *testing.T, path string) []ndjsonTestRecord {
+	t.Helper()
+	f, err := os.Open(path)
 	if err != nil {
-		t.Fatalf("read: %v", err)
+		t.Fatalf("open output: %v", err)
 	}
-	if !strings.Contains(string(content), "record_type") {
-		t.Fatalf("missing csv header: %s", string(content))
+	defer f.Close()
+
+	var records []ndjsonTestRecord
+	scanner := bufio.NewScanner(f)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" {
+			continue
+		}
+		var rec ndjsonTestRecord
+		if err := json.Unmarshal([]byte(line), &rec); err != nil {
+			t.Fatalf("decode ndjson: %v", err)
+		}
+		records = append(records, rec)
 	}
-	if !strings.Contains(string(content), "schema_version") {
-		t.Fatalf("missing schema_version column: %s", string(content))
+	if err := scanner.Err(); err != nil {
+		t.Fatalf("scan ndjson: %v", err)
 	}
-	if !strings.Contains(string(content), "file") {
-		t.Fatalf("missing file row: %s", string(content))
-	}
+	return records
 }

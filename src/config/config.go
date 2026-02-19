@@ -14,123 +14,155 @@ import (
 )
 
 type Config struct {
-	StartPaths          []string          `json:"start_paths"`
-	AllDrives           bool              `json:"all_drives"`
-	ScanFiles           bool              `json:"scan_files"`
-	ScanSensitive       bool              `json:"scan_sensitive"`
-	ScanProcesses       bool              `json:"scan_processes"`
-	CollectSystemInfo   bool              `json:"collect_system_info"`
-	OutputFormat        string            `json:"output_format"`
-	OutputFileName      string            `json:"output_file_name"`
-	ConcurrencyLevel    int               `json:"concurrency_level"`
-	NiceLevel           string            `json:"nice_level"`
-	HashAlgorithms      []string          `json:"hash_algorithms"`
-	SearchTerms         []string          `json:"search_terms"`
-	IncludePatterns     []string          `json:"include_patterns"`
-	ExcludePatterns     []string          `json:"exclude_patterns"`
-	MaxFileSize         int64             `json:"max_file_size"`
-	MaxOutputFileSize   int64             `json:"max_output_file_size"`
-	LogLevel            string            `json:"log_level"`
-	MaxIOPerSecond      int               `json:"max_io_per_second"`
-	ConfigFile          string            `json:"config_file"`
-	ExtendedProcessInfo bool              `json:"extended_process_info"`
-	IncludeDataTypes    []string          `json:"include_sensitive_data_types"`
-	ExcludeDataTypes    []string          `json:"exclude_sensitive_data_types"`
-	CustomPatterns      map[string]string `json:"custom_patterns"`
-	FuzzyHash           bool              `json:"fuzzy_hash"`
-	FuzzyAlgorithms     []string          `json:"fuzzy_algorithms"`
-	FuzzyMinSize        int64             `json:"fuzzy_min_size"`
-	FuzzyMaxSize        int64             `json:"fuzzy_max_size"`
-	DeltaScan           bool              `json:"delta_scan"`
-	LastScanFile        string            `json:"last_scan_file"`
-	LastScanTime        string            `json:"last_scan_time"`
-	SkipCount           bool              `json:"skip_count"`
-	SensitiveMaxPerType int               `json:"sensitive_max_matches_per_type"`
-	SensitiveMaxTotal   int               `json:"sensitive_max_total_matches"`
-	MetadataMaxBytes    int64             `json:"metadata_max_bytes"`
-	RedactSensitive     string            `json:"redact_sensitive"`
-	CollectXattrs       bool              `json:"collect_xattrs"`
-	XattrMaxValueSize   int               `json:"xattr_max_value_size"`
-	CollectACL          bool              `json:"collect_acl"`
-	CollectScheduled    bool              `json:"collect_scheduled_tasks"`
-	CollectUsers        bool              `json:"collect_users"`
-	CollectGroups       bool              `json:"collect_groups"`
-	CollectAdmins       bool              `json:"collect_admins"`
-	ScanADS             bool              `json:"scan_ads"`
-	AutoTune            bool              `json:"auto_tune"`
-	AutoTuneInterval    time.Duration     `json:"auto_tune_interval"`
-	AutoTuneTargetCPU   float64           `json:"auto_tune_target_cpu"`
-	OtelEndpoint        string            `json:"otel_endpoint"`
-	OtelFromEnv         bool              `json:"otel_from_env"`
-	OtelHeaders         map[string]string `json:"otel_headers"`
-	OtelServiceName     string            `json:"otel_service_name"`
-	OtelTimeout         time.Duration     `json:"otel_timeout"`
-	OtelExportPaths     bool              `json:"otel_export_paths"`
-	OtelExportSensitive bool              `json:"otel_export_sensitive"`
-	OtelExportCmdline   bool              `json:"otel_export_cmdline"`
-	TraceFlight         bool              `json:"trace_flight"`
-	TraceFlightFile     string            `json:"trace_flight_file"`
-	TraceFlightMaxBytes uint64            `json:"trace_flight_max_bytes"`
-	TraceFlightMinAge   time.Duration     `json:"trace_flight_min_age"`
-	ConcurrencySet      bool              `json:"-"`
-	MaxIOSet            bool              `json:"-"`
+	StartPaths              []string          `json:"start_paths"`
+	AllDrives               bool              `json:"all_drives"`
+	ScanFiles               bool              `json:"scan_files"`
+	ScanSensitive           bool              `json:"scan_sensitive"`
+	ScanProcesses           bool              `json:"scan_processes"`
+	CollectSystemInfo       bool              `json:"collect_system_info"`
+	OutputFormat            string            `json:"output_format"`
+	OutputFileName          string            `json:"output_file_name"`
+	ConcurrencyLevel        int               `json:"concurrency_level"`
+	NiceLevel               string            `json:"nice_level"`
+	HashAlgorithms          []string          `json:"hash_algorithms"`
+	SearchTerms             []string          `json:"search_terms"`
+	IncludePatterns         []string          `json:"include_patterns"`
+	ExcludePatterns         []string          `json:"exclude_patterns"`
+	MaxFileSize             int64             `json:"max_file_size"`
+	MaxOutputFileSize       int64             `json:"max_output_file_size"`
+	LogLevel                string            `json:"log_level"`
+	MaxIOPerSecond          int               `json:"max_io_per_second"`
+	ConfigFile              string            `json:"config_file"`
+	ExtendedProcessInfo     bool              `json:"extended_process_info"`
+	IncludeDataTypes        []string          `json:"include_sensitive_data_types"`
+	ExcludeDataTypes        []string          `json:"exclude_sensitive_data_types"`
+	CustomPatterns          map[string]string `json:"custom_patterns"`
+	FuzzyHash               bool              `json:"fuzzy_hash"`
+	FuzzyAlgorithms         []string          `json:"fuzzy_algorithms"`
+	FuzzyMinSize            int64             `json:"fuzzy_min_size"`
+	FuzzyMaxSize            int64             `json:"fuzzy_max_size"`
+	DeltaScan               bool              `json:"delta_scan"`
+	LastScanFile            string            `json:"last_scan_file"`
+	LastScanTime            string            `json:"last_scan_time"`
+	SkipCount               bool              `json:"skip_count"`
+	SensitiveMaxPerType     int               `json:"sensitive_max_matches_per_type"`
+	SensitiveMaxTotal       int               `json:"sensitive_max_total_matches"`
+	MetadataMaxBytes        int64             `json:"metadata_max_bytes"`
+	RedactSensitive         string            `json:"redact_sensitive"`
+	CollectXattrs           bool              `json:"collect_xattrs"`
+	XattrMaxValueSize       int               `json:"xattr_max_value_size"`
+	CollectACL              bool              `json:"collect_acl"`
+	CollectScheduled        bool              `json:"collect_scheduled_tasks"`
+	CollectUsers            bool              `json:"collect_users"`
+	CollectGroups           bool              `json:"collect_groups"`
+	CollectAdmins           bool              `json:"collect_admins"`
+	ScanADS                 bool              `json:"scan_ads"`
+	AutoTune                bool              `json:"auto_tune"`
+	AutoTuneInterval        time.Duration     `json:"auto_tune_interval"`
+	AutoTuneTargetCPU       float64           `json:"auto_tune_target_cpu"`
+	AutoTuneRuntimeMetrics  bool              `json:"auto_tune_runtime_metrics"`
+	AutoTuneTargetRunQ      float64           `json:"auto_tune_target_runq"`
+	AutoTuneTargetLatencyMs int               `json:"auto_tune_target_latency_ms"`
+	PerfProfile             string            `json:"perf_profile"`
+	SensitiveEngine         string            `json:"sensitive_engine"`
+	SensitiveLongtail       string            `json:"sensitive_longtail"`
+	SensitiveWindowBytes    int               `json:"sensitive_window_bytes"`
+	ContentReadMode         string            `json:"content_read_mode"`
+	StreamChunkSize         int               `json:"stream_chunk_size"`
+	StreamOverlapBytes      int               `json:"stream_overlap_bytes"`
+	MmapMinSize             int64             `json:"mmap_min_size"`
+	JSONLayout              string            `json:"json_layout"`
+	SimdFastpath            bool              `json:"simd_fastpath"`
+	DiagSlowScanThreshold   time.Duration     `json:"diag_slow_scan_threshold"`
+	DiagDir                 string            `json:"diag_dir"`
+	DiagGoroutineLeak       bool              `json:"diag_goroutine_leak"`
+	OtelEndpoint            string            `json:"otel_endpoint"`
+	OtelFromEnv             bool              `json:"otel_from_env"`
+	OtelHeaders             map[string]string `json:"otel_headers"`
+	OtelServiceName         string            `json:"otel_service_name"`
+	OtelTimeout             time.Duration     `json:"otel_timeout"`
+	OtelExportPaths         bool              `json:"otel_export_paths"`
+	OtelExportSensitive     bool              `json:"otel_export_sensitive"`
+	OtelExportCmdline       bool              `json:"otel_export_cmdline"`
+	TraceFlight             bool              `json:"trace_flight"`
+	TraceFlightFile         string            `json:"trace_flight_file"`
+	TraceFlightMaxBytes     uint64            `json:"trace_flight_max_bytes"`
+	TraceFlightMinAge       time.Duration     `json:"trace_flight_min_age"`
+	ConcurrencySet          bool              `json:"-"`
+	MaxIOSet                bool              `json:"-"`
 }
 
 func LoadConfig() (*Config, error) {
 	now := time.Now().UTC()
 	timestamp := now.Format("20060102-150405")
 	cfg := &Config{
-		StartPaths:          []string{"."},
-		ScanFiles:           true,
-		ScanSensitive:       true,
-		ScanProcesses:       true,
-		CollectSystemInfo:   true,
-		OutputFormat:        "json",
-		OutputFileName:      fmt.Sprintf("safnari-%s-%d.json", timestamp, now.Unix()),
-		ConcurrencyLevel:    runtime.NumCPU(),
-		NiceLevel:           "medium",
-		HashAlgorithms:      []string{"md5", "sha1", "sha256"},
-		SearchTerms:         []string{},
-		MaxFileSize:         10485760,
-		MaxOutputFileSize:   104857600,
-		LogLevel:            "info",
-		MaxIOPerSecond:      1000,
-		IncludeDataTypes:    []string{},
-		ExcludeDataTypes:    []string{},
-		CustomPatterns:      map[string]string{},
-		FuzzyAlgorithms:     []string{},
-		FuzzyMinSize:        256,
-		FuzzyMaxSize:        20 * 1024 * 1024,
-		DeltaScan:           false,
-		LastScanFile:        ".safnari_last_scan",
-		SkipCount:           true,
-		SensitiveMaxPerType: 100,
-		SensitiveMaxTotal:   1000,
-		MetadataMaxBytes:    1 * 1024 * 1024,
-		RedactSensitive:     "mask",
-		CollectXattrs:       true,
-		XattrMaxValueSize:   1024,
-		CollectACL:          true,
-		CollectScheduled:    true,
-		CollectUsers:        true,
-		CollectGroups:       true,
-		CollectAdmins:       true,
-		ScanADS:             false,
-		AutoTune:            true,
-		AutoTuneInterval:    5 * time.Second,
-		AutoTuneTargetCPU:   60,
-		OtelEndpoint:        "",
-		OtelFromEnv:         false,
-		OtelHeaders:         map[string]string{},
-		OtelServiceName:     "safnari",
-		OtelTimeout:         5 * time.Second,
-		OtelExportPaths:     false,
-		OtelExportSensitive: false,
-		OtelExportCmdline:   false,
-		TraceFlight:         false,
-		TraceFlightFile:     "trace-flight.out",
-		TraceFlightMaxBytes: 0,
-		TraceFlightMinAge:   0,
+		StartPaths:              []string{"."},
+		ScanFiles:               true,
+		ScanSensitive:           true,
+		ScanProcesses:           true,
+		CollectSystemInfo:       true,
+		OutputFormat:            "json",
+		OutputFileName:          fmt.Sprintf("safnari-%s-%d.ndjson", timestamp, now.Unix()),
+		ConcurrencyLevel:        runtime.NumCPU(),
+		NiceLevel:               "medium",
+		HashAlgorithms:          []string{"md5", "sha1", "sha256"},
+		SearchTerms:             []string{},
+		MaxFileSize:             10485760,
+		MaxOutputFileSize:       104857600,
+		LogLevel:                "info",
+		MaxIOPerSecond:          1000,
+		IncludeDataTypes:        []string{},
+		ExcludeDataTypes:        []string{},
+		CustomPatterns:          map[string]string{},
+		FuzzyAlgorithms:         []string{},
+		FuzzyMinSize:            256,
+		FuzzyMaxSize:            20 * 1024 * 1024,
+		DeltaScan:               false,
+		LastScanFile:            ".safnari_last_scan",
+		SkipCount:               true,
+		SensitiveMaxPerType:     100,
+		SensitiveMaxTotal:       1000,
+		MetadataMaxBytes:        1 * 1024 * 1024,
+		RedactSensitive:         "mask",
+		CollectXattrs:           true,
+		XattrMaxValueSize:       1024,
+		CollectACL:              true,
+		CollectScheduled:        true,
+		CollectUsers:            true,
+		CollectGroups:           true,
+		CollectAdmins:           true,
+		ScanADS:                 false,
+		AutoTune:                true,
+		AutoTuneInterval:        5 * time.Second,
+		AutoTuneTargetCPU:       60,
+		AutoTuneRuntimeMetrics:  true,
+		AutoTuneTargetRunQ:      1.0,
+		AutoTuneTargetLatencyMs: 25,
+		PerfProfile:             "adaptive",
+		SensitiveEngine:         "auto",
+		SensitiveLongtail:       "sampled",
+		SensitiveWindowBytes:    4096,
+		ContentReadMode:         "auto",
+		StreamChunkSize:         256 * 1024,
+		StreamOverlapBytes:      512,
+		MmapMinSize:             128 * 1024,
+		JSONLayout:              "ndjson",
+		SimdFastpath:            false,
+		DiagSlowScanThreshold:   0,
+		DiagDir:                 ".",
+		DiagGoroutineLeak:       false,
+		OtelEndpoint:            "",
+		OtelFromEnv:             false,
+		OtelHeaders:             map[string]string{},
+		OtelServiceName:         "safnari",
+		OtelTimeout:             5 * time.Second,
+		OtelExportPaths:         false,
+		OtelExportSensitive:     false,
+		OtelExportCmdline:       false,
+		TraceFlight:             false,
+		TraceFlightFile:         "trace-flight.out",
+		TraceFlightMaxBytes:     0,
+		TraceFlightMinAge:       0,
 	}
 
 	startPath := flag.String("path", strings.Join(cfg.StartPaths, ","), fmt.Sprintf("Comma-separated list of start paths to scan (default: %s).", strings.Join(cfg.StartPaths, ",")))
@@ -139,8 +171,8 @@ func LoadConfig() (*Config, error) {
 	scanSensitive := flag.Bool("scan-sensitive", cfg.ScanSensitive, fmt.Sprintf("Enable sensitive data scanning (default: %t).", cfg.ScanSensitive))
 	scanProcesses := flag.Bool("scan-processes", cfg.ScanProcesses, fmt.Sprintf("Enable process scanning (default: %t).", cfg.ScanProcesses))
 	collectSystemInfo := flag.Bool("collect-system-info", cfg.CollectSystemInfo, fmt.Sprintf("Collect system information (default: %t).", cfg.CollectSystemInfo))
-	format := flag.String("format", cfg.OutputFormat, fmt.Sprintf("Output format: json or csv (default: %s).", cfg.OutputFormat))
-	output := flag.String("output", cfg.OutputFileName, "Output file name (default: safnari-<timestamp>-<unix>.json).")
+	format := flag.String("format", cfg.OutputFormat, fmt.Sprintf("Output format: json (default: %s).", cfg.OutputFormat))
+	output := flag.String("output", cfg.OutputFileName, "Output file name (default: safnari-<timestamp>-<unix>.ndjson).")
 	concurrency := flag.Int("concurrency", cfg.ConcurrencyLevel, fmt.Sprintf("Concurrency level (default: %d).", cfg.ConcurrencyLevel))
 	nice := flag.String("nice", cfg.NiceLevel, fmt.Sprintf("Nice level: high, medium, or low (default: %s).", cfg.NiceLevel))
 	hashes := flag.String("hashes", strings.Join(cfg.HashAlgorithms, ","), fmt.Sprintf("Comma-separated list of hash algorithms (default: %s).", strings.Join(cfg.HashAlgorithms, ",")))
@@ -200,6 +232,58 @@ func LoadConfig() (*Config, error) {
 	autoTune := flag.Bool("auto-tune", cfg.AutoTune, fmt.Sprintf("Auto-tune resource usage (default: %t).", cfg.AutoTune))
 	autoTuneInterval := flag.Duration("auto-tune-interval", cfg.AutoTuneInterval, "Auto-tune interval (default: 5s).")
 	autoTuneTargetCPU := flag.Float64("auto-tune-target-cpu", cfg.AutoTuneTargetCPU, "Auto-tune target CPU percent (default: 60).")
+	autoTuneRuntimeMetrics := flag.Bool(
+		"auto-tune-runtime-metrics",
+		cfg.AutoTuneRuntimeMetrics,
+		"Use runtime scheduler and heap signals in auto-tune decisions (default: true).",
+	)
+	autoTuneTargetRunQ := flag.Float64(
+		"auto-tune-target-runq",
+		cfg.AutoTuneTargetRunQ,
+		"Auto-tune target scheduler run-queue ratio (default: 1.0).",
+	)
+	autoTuneTargetLatencyMs := flag.Int(
+		"auto-tune-target-latency-ms",
+		cfg.AutoTuneTargetLatencyMs,
+		"Auto-tune target scheduler latency in milliseconds (default: 25).",
+	)
+	perfProfile := flag.String("perf-profile", cfg.PerfProfile, "Performance profile: adaptive or ultra (default: adaptive).")
+	sensitiveEngine := flag.String(
+		"sensitive-engine",
+		cfg.SensitiveEngine,
+		"Sensitive scan engine: auto, deterministic, or hybrid (default: auto).",
+	)
+	sensitiveLongtail := flag.String(
+		"sensitive-longtail",
+		cfg.SensitiveLongtail,
+		"Long-tail sensitive pattern handling: off, sampled, or full (default: sampled).",
+	)
+	sensitiveWindowBytes := flag.Int(
+		"sensitive-window-bytes",
+		cfg.SensitiveWindowBytes,
+		"Window size in bytes for long-tail hybrid scans (default: 4096).",
+	)
+	contentReadMode := flag.String("content-read-mode", cfg.ContentReadMode, "Content read mode: auto, stream, or mmap (default: auto).")
+	streamChunkSize := flag.Int("stream-chunk-size", cfg.StreamChunkSize, "Streaming chunk size in bytes (default: 262144).")
+	streamOverlapBytes := flag.Int("stream-overlap-bytes", cfg.StreamOverlapBytes, "Streaming overlap in bytes between chunks (default: 512).")
+	mmapMinSize := flag.Int64(
+		"mmap-min-size",
+		cfg.MmapMinSize,
+		"Minimum file size in bytes for mmap content read path when enabled (default: 131072).",
+	)
+	jsonLayout := flag.String("json-layout", cfg.JSONLayout, "JSON output layout. Only ndjson is supported (default: ndjson).")
+	simdFastpath := flag.Bool("simd-fastpath", cfg.SimdFastpath, "Enable SIMD text fast path experiment when available (default: false).")
+	diagSlowScanThreshold := flag.Duration(
+		"diag-slow-scan-threshold",
+		cfg.DiagSlowScanThreshold,
+		"If positive, emit diagnostics when scan progress stalls for this duration (default: 0/off).",
+	)
+	diagDir := flag.String("diag-dir", cfg.DiagDir, "Diagnostics output directory (default: current directory).")
+	diagGoroutineLeak := flag.Bool(
+		"diag-goroutine-leak",
+		cfg.DiagGoroutineLeak,
+		"Write goroutine leak profile on shutdown (default: false).",
+	)
 	otelEndpoint := flag.String("otel-endpoint", cfg.OtelEndpoint, "OTLP/HTTP logs endpoint (default: none).")
 	otelFromEnv := flag.Bool("otel-from-env", cfg.OtelFromEnv, "Allow OTEL endpoint fallback from OTEL environment variables (default: false).")
 	otelHeaders := flag.String("otel-headers", "", "Comma-separated OTEL headers (key=value) for export (default: none).")
@@ -323,6 +407,38 @@ func LoadConfig() (*Config, error) {
 			cfg.AutoTuneInterval = *autoTuneInterval
 		case "auto-tune-target-cpu":
 			cfg.AutoTuneTargetCPU = *autoTuneTargetCPU
+		case "auto-tune-runtime-metrics":
+			cfg.AutoTuneRuntimeMetrics = *autoTuneRuntimeMetrics
+		case "auto-tune-target-runq":
+			cfg.AutoTuneTargetRunQ = *autoTuneTargetRunQ
+		case "auto-tune-target-latency-ms":
+			cfg.AutoTuneTargetLatencyMs = *autoTuneTargetLatencyMs
+		case "perf-profile":
+			cfg.PerfProfile = strings.ToLower(strings.TrimSpace(*perfProfile))
+		case "sensitive-engine":
+			cfg.SensitiveEngine = strings.ToLower(strings.TrimSpace(*sensitiveEngine))
+		case "sensitive-longtail":
+			cfg.SensitiveLongtail = strings.ToLower(strings.TrimSpace(*sensitiveLongtail))
+		case "sensitive-window-bytes":
+			cfg.SensitiveWindowBytes = *sensitiveWindowBytes
+		case "content-read-mode":
+			cfg.ContentReadMode = strings.ToLower(strings.TrimSpace(*contentReadMode))
+		case "stream-chunk-size":
+			cfg.StreamChunkSize = *streamChunkSize
+		case "stream-overlap-bytes":
+			cfg.StreamOverlapBytes = *streamOverlapBytes
+		case "mmap-min-size":
+			cfg.MmapMinSize = *mmapMinSize
+		case "json-layout":
+			cfg.JSONLayout = strings.ToLower(strings.TrimSpace(*jsonLayout))
+		case "simd-fastpath":
+			cfg.SimdFastpath = *simdFastpath
+		case "diag-slow-scan-threshold":
+			cfg.DiagSlowScanThreshold = *diagSlowScanThreshold
+		case "diag-dir":
+			cfg.DiagDir = strings.TrimSpace(*diagDir)
+		case "diag-goroutine-leak":
+			cfg.DiagGoroutineLeak = *diagGoroutineLeak
 		case "otel-endpoint":
 			cfg.OtelEndpoint = strings.TrimSpace(*otelEndpoint)
 		case "otel-from-env":
@@ -351,8 +467,43 @@ func LoadConfig() (*Config, error) {
 	})
 	cfg.OutputFormat = strings.ToLower(cfg.OutputFormat)
 	cfg.RedactSensitive = strings.ToLower(strings.TrimSpace(cfg.RedactSensitive))
+	cfg.PerfProfile = strings.ToLower(strings.TrimSpace(cfg.PerfProfile))
+	cfg.SensitiveEngine = strings.ToLower(strings.TrimSpace(cfg.SensitiveEngine))
+	cfg.SensitiveLongtail = strings.ToLower(strings.TrimSpace(cfg.SensitiveLongtail))
+	cfg.ContentReadMode = strings.ToLower(strings.TrimSpace(cfg.ContentReadMode))
+	cfg.JSONLayout = strings.ToLower(strings.TrimSpace(cfg.JSONLayout))
 	if cfg.RedactSensitive == "none" {
 		cfg.RedactSensitive = ""
+	}
+	if cfg.PerfProfile == "" {
+		cfg.PerfProfile = "adaptive"
+	}
+	if cfg.SensitiveEngine == "" {
+		cfg.SensitiveEngine = "auto"
+	}
+	if cfg.SensitiveLongtail == "" {
+		cfg.SensitiveLongtail = "sampled"
+	}
+	if cfg.ContentReadMode == "" {
+		cfg.ContentReadMode = "auto"
+	}
+	if cfg.SensitiveWindowBytes <= 0 {
+		cfg.SensitiveWindowBytes = 4096
+	}
+	if cfg.StreamChunkSize <= 0 {
+		cfg.StreamChunkSize = 256 * 1024
+	}
+	if cfg.StreamOverlapBytes < 0 {
+		cfg.StreamOverlapBytes = 512
+	}
+	if cfg.MmapMinSize <= 0 {
+		cfg.MmapMinSize = 128 * 1024
+	}
+	if cfg.JSONLayout == "" {
+		cfg.JSONLayout = "ndjson"
+	}
+	if cfg.DiagDir == "" {
+		cfg.DiagDir = "."
 	}
 	cfg.FuzzyAlgorithms = normalizeAlgorithms(cfg.FuzzyAlgorithms)
 	if cfg.FuzzyHash && len(cfg.FuzzyAlgorithms) == 0 {
@@ -419,6 +570,34 @@ func (cfg *Config) loadFromFile(path string) error {
 }
 
 func (cfg *Config) validate() error {
+	if strings.TrimSpace(cfg.PerfProfile) == "" {
+		cfg.PerfProfile = "adaptive"
+	}
+	if strings.TrimSpace(cfg.SensitiveEngine) == "" {
+		cfg.SensitiveEngine = "auto"
+	}
+	if strings.TrimSpace(cfg.SensitiveLongtail) == "" {
+		cfg.SensitiveLongtail = "sampled"
+	}
+	if strings.TrimSpace(cfg.ContentReadMode) == "" {
+		cfg.ContentReadMode = "auto"
+	}
+	if strings.TrimSpace(cfg.JSONLayout) == "" {
+		cfg.JSONLayout = "ndjson"
+	}
+	if cfg.SensitiveWindowBytes <= 0 {
+		cfg.SensitiveWindowBytes = 4096
+	}
+	if cfg.StreamChunkSize <= 0 {
+		cfg.StreamChunkSize = 256 * 1024
+	}
+	if cfg.StreamOverlapBytes < 0 {
+		cfg.StreamOverlapBytes = 512
+	}
+	if strings.TrimSpace(cfg.DiagDir) == "" {
+		cfg.DiagDir = "."
+	}
+
 	if !cfg.ScanFiles && !cfg.ScanProcesses && !cfg.ScanSensitive && !cfg.CollectSystemInfo {
 		return fmt.Errorf("at least one of --collect-system-info, --scan-files, --scan-sensitive, or --scan-processes must be enabled")
 	}
@@ -428,8 +607,8 @@ func (cfg *Config) validate() error {
 	if cfg.AllDrives && runtime.GOOS != "windows" {
 		return fmt.Errorf("--all-drives flag is only supported on Windows")
 	}
-	if cfg.OutputFormat != "json" && cfg.OutputFormat != "csv" {
-		return fmt.Errorf("invalid output format: %s", cfg.OutputFormat)
+	if cfg.OutputFormat != "json" {
+		return fmt.Errorf("invalid output format: %s (only json is supported)", cfg.OutputFormat)
 	}
 	if cfg.RedactSensitive != "" && cfg.RedactSensitive != "mask" && cfg.RedactSensitive != "hash" {
 		return fmt.Errorf("invalid redact-sensitive value: %s", cfg.RedactSensitive)
@@ -444,6 +623,45 @@ func (cfg *Config) validate() error {
 		if cfg.AutoTuneTargetCPU <= 0 || cfg.AutoTuneTargetCPU > 100 {
 			return fmt.Errorf("auto-tune-target-cpu must be between 1 and 100")
 		}
+		if cfg.AutoTuneTargetRunQ <= 0 {
+			return fmt.Errorf("auto-tune-target-runq must be positive")
+		}
+		if cfg.AutoTuneTargetLatencyMs <= 0 {
+			return fmt.Errorf("auto-tune-target-latency-ms must be positive")
+		}
+	}
+	if cfg.PerfProfile != "adaptive" && cfg.PerfProfile != "ultra" {
+		return fmt.Errorf("invalid perf-profile value: %s", cfg.PerfProfile)
+	}
+	if cfg.SensitiveEngine != "auto" && cfg.SensitiveEngine != "deterministic" && cfg.SensitiveEngine != "hybrid" {
+		return fmt.Errorf("invalid sensitive-engine value: %s", cfg.SensitiveEngine)
+	}
+	if cfg.SensitiveLongtail != "off" && cfg.SensitiveLongtail != "sampled" && cfg.SensitiveLongtail != "full" {
+		return fmt.Errorf("invalid sensitive-longtail value: %s", cfg.SensitiveLongtail)
+	}
+	if cfg.ContentReadMode != "stream" && cfg.ContentReadMode != "mmap" && cfg.ContentReadMode != "auto" {
+		return fmt.Errorf("invalid content-read-mode value: %s", cfg.ContentReadMode)
+	}
+	if cfg.JSONLayout != "ndjson" {
+		return fmt.Errorf("invalid json-layout value: %s", cfg.JSONLayout)
+	}
+	if cfg.MmapMinSize < 0 {
+		return fmt.Errorf("mmap-min-size must be zero or positive")
+	}
+	if cfg.StreamChunkSize <= 0 {
+		return fmt.Errorf("stream-chunk-size must be positive")
+	}
+	if cfg.StreamOverlapBytes < 0 {
+		return fmt.Errorf("stream-overlap-bytes must be zero or positive")
+	}
+	if cfg.StreamOverlapBytes >= cfg.StreamChunkSize {
+		return fmt.Errorf("stream-overlap-bytes must be smaller than stream-chunk-size")
+	}
+	if cfg.SensitiveWindowBytes <= 0 {
+		return fmt.Errorf("sensitive-window-bytes must be positive")
+	}
+	if cfg.DiagSlowScanThreshold < 0 {
+		return fmt.Errorf("diag-slow-scan-threshold must be zero or positive")
 	}
 	if cfg.XattrMaxValueSize < 0 {
 		return fmt.Errorf("xattr-max-value-size must be zero or positive")

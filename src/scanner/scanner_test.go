@@ -2,6 +2,7 @@ package scanner
 
 import (
 	"context"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -195,14 +196,14 @@ func TestCollectFileData(t *testing.T) {
 	fi, _ := os.Stat(tmp.Name())
 	cfg := &config.Config{HashAlgorithms: []string{"md5"}, MaxFileSize: 1024, ScanFiles: true, ScanSensitive: true}
 	patterns := GetPatterns([]string{"email"}, nil, nil)
-	data, err := collectFileData(context.Background(), tmp.Name(), fi, cfg, patterns)
+	data, err := collectFileData(context.Background(), tmp.Name(), fi, cfg, patterns, buildFileModules(cfg, patterns))
 	if err != nil {
 		t.Fatalf("collect: %v", err)
 	}
-	if data["path"] != tmp.Name() {
+	if data.Path != tmp.Name() {
 		t.Fatalf("unexpected path")
 	}
-	if _, ok := data["hashes"].(map[string]string)["md5"]; !ok {
+	if _, ok := data.Hashes["md5"]; !ok {
 		t.Fatalf("hash missing")
 	}
 }
@@ -255,8 +256,8 @@ func TestProcessFileMaxFileSizeZeroTreatsAsUnlimited(t *testing.T) {
 	defer w.Close()
 
 	ProcessFile(context.Background(), tmp.Name(), cfg, w, GetPatterns(nil, nil, nil))
-	if metrics.FilesScanned != 1 {
-		t.Fatalf("expected file to be scanned when max-file-size=0, got %d", metrics.FilesScanned)
+	if got := w.FilesScanned(); got != 1 {
+		t.Fatalf("expected file to be scanned when max-file-size=0, got %d", got)
 	}
 }
 
@@ -266,7 +267,7 @@ func TestCountTotalFiles(t *testing.T) {
 	os.WriteFile(dir+"/b.txt", []byte("b"), 0644)
 	cfg := &config.Config{}
 	matcher := utils.NewPatternMatcher(cfg.IncludePatterns, cfg.ExcludePatterns)
-	count, err := countTotalFiles(dir, cfg, time.Time{}, matcher)
+	count, err := countTotalFiles(context.Background(), dir, cfg, time.Time{}, matcher)
 	if err != nil || count != 2 {
 		t.Fatalf("count: %v %d", err, count)
 	}
@@ -281,7 +282,7 @@ func TestCountTotalFilesDelta(t *testing.T) {
 	os.WriteFile(dir+"/b.txt", []byte("b"), 0644)
 	cfg := &config.Config{DeltaScan: true}
 	matcher := utils.NewPatternMatcher(cfg.IncludePatterns, cfg.ExcludePatterns)
-	count, err := countTotalFiles(dir, cfg, last, matcher)
+	count, err := countTotalFiles(context.Background(), dir, cfg, last, matcher)
 	if err != nil || count != 1 {
 		t.Fatalf("delta count: %v %d", err, count)
 	}
@@ -350,8 +351,136 @@ func TestGetFileOwnership(t *testing.T) {
 	tmp, _ := os.CreateTemp("", "owner")
 	tmp.Close()
 	defer os.Remove(tmp.Name())
-	owner, err := getFileOwnership(tmp.Name())
+	owner, err := getFileOwnership(tmp.Name(), nil)
 	if err != nil || owner == "" {
 		t.Fatalf("ownership: %v %s", err, owner)
 	}
+}
+
+func TestShouldWriteFileData(t *testing.T) {
+	cfg := &config.Config{ScanFiles: false}
+	if shouldWriteFileData(cfg, &FileRecord{}) {
+		t.Fatal("expected empty data to be skipped when scan-files is disabled")
+	}
+	if !shouldWriteFileData(cfg, &FileRecord{SearchHits: map[string]int{"secret": 1}}) {
+		t.Fatal("expected data with search hits to be written")
+	}
+
+	cfg.ScanFiles = true
+	if !shouldWriteFileData(cfg, &FileRecord{}) {
+		t.Fatal("expected scan-files mode to always write")
+	}
+}
+
+func TestScanForSearchTerms(t *testing.T) {
+	content := "alpha beta alpha gamma"
+	hits := scanForSearchTerms(content, []string{"alpha", "delta", ""})
+	if hits["alpha"] != 2 {
+		t.Fatalf("expected 2 alpha hits, got %d", hits["alpha"])
+	}
+	if _, ok := hits["delta"]; ok {
+		t.Fatal("expected no delta hits")
+	}
+	if _, ok := hits[""]; ok {
+		t.Fatal("expected empty search term to be ignored")
+	}
+}
+
+func TestSensitiveEngineDeterministicCriticalParity(t *testing.T) {
+	content := "test@example.com api_key=abcd1234 " +
+		"AKIA" + "ABCDEFGHIJKLMNOP " +
+		"eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjMifQ.sig"
+	patterns := GetPatterns([]string{"email", "api_key", "aws_access_key", "jwt_token"}, nil, nil)
+
+	regexMatches, regexCounts := scanForSensitiveData(content, patterns, 100, 1000)
+	detMatches, detCounts := scanForSensitiveDataAdvanced([]byte(content), patterns, 100, 1000, "deterministic", "off", 4096, nil)
+
+	if len(regexMatches) != len(detMatches) {
+		t.Fatalf("expected deterministic critical parity, regex=%v deterministic=%v", regexMatches, detMatches)
+	}
+	for key, regexCount := range regexCounts {
+		if detCounts[key] != regexCount {
+			t.Fatalf("expected deterministic count parity for %s: regex=%d deterministic=%d", key, regexCount, detCounts[key])
+		}
+	}
+}
+
+func TestSensitiveMatchesMayBeTruncated(t *testing.T) {
+	counts := map[string]int{"email": 2, "credit_card": 1}
+	if !sensitiveMatchesMayBeTruncated(counts, 2, 0) {
+		t.Fatal("expected per-type limit to mark potential truncation")
+	}
+	if !sensitiveMatchesMayBeTruncated(counts, 0, 3) {
+		t.Fatal("expected total limit to mark potential truncation")
+	}
+	if sensitiveMatchesMayBeTruncated(counts, 3, 4) {
+		t.Fatal("did not expect truncation when all counts are below limits")
+	}
+}
+
+func TestBuildFuzzyHashers(t *testing.T) {
+	cfg := &config.Config{FuzzyHash: true}
+	hashers := buildFuzzyHashers(cfg)
+	if len(hashers) == 0 || hashers[0].Name() != "tlsh" {
+		t.Fatalf("expected default tlsh hasher, got %#v", hashers)
+	}
+
+	cfg = &config.Config{FuzzyAlgorithms: []string{"not-real"}}
+	hashers = buildFuzzyHashers(cfg)
+	if len(hashers) != 0 {
+		t.Fatalf("expected unsupported fuzzy hasher to be dropped, got %#v", hashers)
+	}
+}
+
+func TestTraversalDiscoversExpectedSet(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "a", "b"), 0755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(root, "x"), 0755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	mustWrite := func(path, content string) {
+		if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+			t.Fatalf("write %s: %v", path, err)
+		}
+	}
+	mustWrite(filepath.Join(root, "a", "keep-1.txt"), "one")
+	mustWrite(filepath.Join(root, "a", "b", "keep-2.txt"), "two")
+	mustWrite(filepath.Join(root, "x", "ignore.bin"), "bin")
+
+	cfg := &config.Config{
+		IncludePatterns: []string{"*.txt"},
+		ExcludePatterns: []string{"*ignore*"},
+	}
+
+	discovered := collectWalkedFiles(t, root, cfg)
+	if len(discovered) != 2 {
+		t.Fatalf("expected 2 discovered files, got %d", len(discovered))
+	}
+	if !discovered[filepath.Join(root, "a", "keep-1.txt")] {
+		t.Fatal("missing keep-1.txt")
+	}
+	if !discovered[filepath.Join(root, "a", "b", "keep-2.txt")] {
+		t.Fatal("missing keep-2.txt")
+	}
+}
+
+func collectWalkedFiles(t *testing.T, root string, cfg *config.Config) map[string]bool {
+	t.Helper()
+	matcher := utils.NewPatternMatcher(cfg.IncludePatterns, cfg.ExcludePatterns)
+	files := make(map[string]bool)
+	err := selectWalker(cfg).Walk(context.Background(), root, func(path string, d fs.DirEntry, err error) error {
+		if err != nil || d == nil || d.IsDir() {
+			return nil
+		}
+		if matcher.ShouldInclude(path) {
+			files[path] = true
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("walk failed: %v", err)
+	}
+	return files
 }

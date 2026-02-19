@@ -4,7 +4,6 @@ import (
 	"context"
 	"io/fs"
 	"os"
-	"path/filepath"
 	"runtime"
 	"strings"
 	"sync"
@@ -14,13 +13,21 @@ import (
 	"safnari/config"
 	"safnari/logger"
 	"safnari/output"
+	"safnari/scanner/prefilter"
 	"safnari/utils"
 
 	"github.com/schollz/progressbar/v3"
 	"golang.org/x/time/rate"
 )
 
+type fileScanTask struct {
+	path string
+	info os.FileInfo
+}
+
 func ScanFiles(ctx context.Context, cfg *config.Config, metrics *output.Metrics, w *output.Writer) error {
+	applyPerformanceProfile(cfg)
+
 	var lastScanTime time.Time
 	if cfg.LastScanTime != "" {
 		t, err := time.Parse(time.RFC3339, cfg.LastScanTime)
@@ -51,6 +58,8 @@ func ScanFiles(ctx context.Context, cfg *config.Config, metrics *output.Metrics,
 	var bar *progressbar.ProgressBar
 
 	matcher := utils.NewPatternMatcher(cfg.IncludePatterns, cfg.ExcludePatterns)
+	setSIMDFastpathEnabled(cfg.SimdFastpath)
+	prefilter.SetSIMDFastpath(cfg.SimdFastpath)
 
 	if cfg.SkipCount {
 		logger.Info("Skipping total file count")
@@ -58,13 +67,14 @@ func ScanFiles(ctx context.Context, cfg *config.Config, metrics *output.Metrics,
 			progressbar.OptionSetDescription("Scanning files"),
 			progressbar.OptionShowCount(),
 			progressbar.OptionSpinnerType(14),
+			progressbar.OptionSetVisibility(progressVisible()),
 			progressbar.OptionFullWidth(),
 		)
 	} else {
 		// Display message about initial file count
 		logger.Info("Counting total number of files...")
 		for _, startPath := range cfg.StartPaths {
-			count, err := countTotalFiles(startPath, cfg, lastScanTime, matcher)
+			count, err := countTotalFiles(ctx, startPath, cfg, lastScanTime, matcher)
 			if err != nil {
 				logger.Warnf("Failed to count files in %s: %v", startPath, err)
 				continue
@@ -80,6 +90,7 @@ func ScanFiles(ctx context.Context, cfg *config.Config, metrics *output.Metrics,
 			progressbar.OptionSetDescription("Scanning files"),
 			progressbar.OptionShowCount(),
 			progressbar.OptionSetPredictTime(true),
+			progressbar.OptionSetVisibility(progressVisible()),
 			progressbar.OptionFullWidth(),
 		)
 	}
@@ -97,6 +108,7 @@ func ScanFiles(ctx context.Context, cfg *config.Config, metrics *output.Metrics,
 
 	// Prepare sensitive data patterns
 	sensitivePatterns := GetPatterns(cfg.IncludeDataTypes, cfg.CustomPatterns, cfg.ExcludeDataTypes)
+	fileModules := buildFileModules(cfg, sensitivePatterns)
 
 	// Implement I/O rate limiter
 	var ioLimiter *rate.Limiter
@@ -113,7 +125,7 @@ func ScanFiles(ctx context.Context, cfg *config.Config, metrics *output.Metrics,
 		adjustConcurrency(cfg)
 	}
 
-	filesChan := make(chan string, cfg.ConcurrencyLevel)
+	filesChan := make(chan fileScanTask, cfg.ConcurrencyLevel)
 	var processedCounter atomic.Int64
 	if cfg.AutoTune {
 		startAutoTuneLoop(
@@ -135,13 +147,18 @@ func ScanFiles(ctx context.Context, cfg *config.Config, metrics *output.Metrics,
 		)
 	}
 
+	selectedWalker := selectWalker(cfg)
+
 	// Start the file walking in a separate goroutine
 	go func() {
 		defer close(filesChan)
 		for _, startPath := range cfg.StartPaths {
-			err := filepath.WalkDir(startPath, func(path string, d fs.DirEntry, err error) error {
+			err := selectedWalker.Walk(ctx, startPath, func(path string, d fs.DirEntry, err error) error {
 				if err != nil {
 					logger.Warnf("Failed to access %s: %v", path, err)
+					return nil
+				}
+				if d == nil {
 					return nil
 				}
 
@@ -162,7 +179,7 @@ func ScanFiles(ctx context.Context, cfg *config.Config, metrics *output.Metrics,
 					select {
 					case <-ctx.Done():
 						return ctx.Err()
-					case filesChan <- path:
+					case filesChan <- fileScanTask{path: path, info: info}:
 						// Wait for permission from the limiter
 						if ioLimiter != nil {
 							if err := ioLimiter.Wait(ctx); err != nil {
@@ -184,14 +201,14 @@ func ScanFiles(ctx context.Context, cfg *config.Config, metrics *output.Metrics,
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			for filePath := range filesChan {
+			for task := range filesChan {
 				select {
 				case <-ctx.Done():
 					return
 				default:
 					// Continue processing
 				}
-				ProcessFile(ctx, filePath, cfg, w, sensitivePatterns)
+				processFile(ctx, task.path, task.info, cfg, w, sensitivePatterns, fileModules, false)
 				processedCounter.Add(1)
 				progressCh <- 1
 			}
@@ -201,6 +218,8 @@ func ScanFiles(ctx context.Context, cfg *config.Config, metrics *output.Metrics,
 	wg.Wait()
 	close(progressCh)
 	progressWG.Wait()
+	metrics.FilesScanned = w.FilesScanned()
+	metrics.FilesProcessed = w.FilesProcessed()
 	if cfg.SkipCount {
 		metrics.TotalFiles = metrics.FilesScanned
 	}
@@ -212,11 +231,18 @@ func ScanFiles(ctx context.Context, cfg *config.Config, metrics *output.Metrics,
 	return nil
 }
 
-func countTotalFiles(startPath string, cfg *config.Config, lastScanTime time.Time, matcher *utils.PatternMatcher) (int, error) {
+func countTotalFiles(ctx context.Context, startPath string, cfg *config.Config, lastScanTime time.Time, matcher *utils.PatternMatcher) (int, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	var total int
-	err := filepath.WalkDir(startPath, func(path string, d fs.DirEntry, err error) error {
+	selectedWalker := selectWalker(cfg)
+	err := selectedWalker.Walk(ctx, startPath, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			logger.Warnf("Failed to access %s: %v", path, err)
+			return nil
+		}
+		if d == nil {
 			return nil
 		}
 		if !d.IsDir() && matcher.ShouldInclude(path) {
@@ -252,4 +278,9 @@ func adjustConcurrency(cfg *config.Config) {
 	case "low":
 		cfg.ConcurrencyLevel = 1
 	}
+}
+
+func progressVisible() bool {
+	value := strings.ToLower(strings.TrimSpace(os.Getenv("SAFNARI_DISABLE_PROGRESS")))
+	return value != "1" && value != "true" && value != "yes" && value != "on"
 }

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"regexp"
+	"sort"
 	"time"
 
 	"safnari/config"
@@ -12,6 +13,7 @@ import (
 	"safnari/hasher"
 	"safnari/logger"
 	"safnari/metadata"
+	"safnari/scanner/prefilter"
 )
 
 const maxContentScanBytes int64 = 10 * 1024 * 1024
@@ -19,7 +21,7 @@ const maxContentScanBytes int64 = 10 * 1024 * 1024
 type FileModule interface {
 	Name() string
 	Enabled(cfg *config.Config) bool
-	Collect(ctx context.Context, fc *FileContext, data map[string]interface{}) error
+	Collect(ctx context.Context, fc *FileContext, data *FileRecord) error
 }
 
 type FileContext struct {
@@ -34,15 +36,6 @@ type FileContext struct {
 	contentText string
 	contentErr  error
 	textLoaded  bool
-}
-
-func newFileContext(path string, info os.FileInfo, cfg *config.Config, patterns map[string]*regexp.Regexp) *FileContext {
-	return &FileContext{
-		Path:              path,
-		Info:              info,
-		Cfg:               cfg,
-		SensitivePatterns: patterns,
-	}
 }
 
 func (fc *FileContext) MimeType() string {
@@ -66,7 +59,14 @@ func (fc *FileContext) ContentBytes() ([]byte, error) {
 	if maxSize <= 0 || maxSize > maxContentScanBytes {
 		maxSize = maxContentScanBytes
 	}
-	content, err := readFileContent(fc.Path, maxSize)
+	content, err := readFileContentWithMode(
+		fc.Path,
+		maxSize,
+		fc.Cfg.ContentReadMode,
+		fc.Cfg.MmapMinSize,
+		fc.Cfg.StreamChunkSize,
+		fc.Cfg.StreamOverlapBytes,
+	)
 	fc.content = content
 	fc.contentErr = err
 	return fc.content, fc.contentErr
@@ -86,11 +86,20 @@ func (fc *FileContext) ContentText() (string, error) {
 }
 
 func (fc *FileContext) ShouldSearchContent() bool {
+	if hasLikelyTextExtension(fc.Path) {
+		return true
+	}
 	return shouldSearchContent(fc.MimeType(), fc.Path)
 }
 
 func buildFileModules(cfg *config.Config, patterns map[string]*regexp.Regexp) []FileModule {
 	fuzzyHashers := buildFuzzyHashers(cfg)
+	searchCounter := prefilter.BuildSearchCounter(cfg.SearchTerms)
+	patternNames := make([]string, 0, len(patterns))
+	for name := range patterns {
+		patternNames = append(patternNames, name)
+	}
+	sort.Strings(patternNames)
 	return []FileModule{
 		baseModule{},
 		xattrModule{},
@@ -100,8 +109,8 @@ func buildFileModules(cfg *config.Config, patterns map[string]*regexp.Regexp) []
 		hashModule{},
 		metadataModule{},
 		fuzzyModule{hashers: fuzzyHashers},
-		sensitiveModule{},
-		searchModule{},
+		sensitiveModule{patternNames: patternNames},
+		searchModule{counter: searchCounter},
 	}
 }
 
@@ -111,34 +120,34 @@ func (m baseModule) Name() string { return "base" }
 
 func (m baseModule) Enabled(cfg *config.Config) bool { return cfg.ScanFiles }
 
-func (m baseModule) Collect(ctx context.Context, fc *FileContext, data map[string]interface{}) error {
-	data["name"] = fc.Info.Name()
-	data["size"] = fc.Info.Size()
-	data["mod_time"] = fc.Info.ModTime().Format(time.RFC3339)
+func (m baseModule) Collect(ctx context.Context, fc *FileContext, data *FileRecord) error {
+	data.Name = fc.Info.Name()
+	data.Size = fc.Info.Size()
+	data.ModTime = fc.Info.ModTime().Format(time.RFC3339)
 
 	times, err := getFileTimes(fc.Path)
 	if err == nil {
-		data["creation_time"] = times.CreationTime
-		data["access_time"] = times.AccessTime
-		data["change_time"] = times.ChangeTime
+		data.CreationTime = times.CreationTime
+		data.AccessTime = times.AccessTime
+		data.ChangeTime = times.ChangeTime
 	} else {
-		data["creation_time"] = ""
-		data["access_time"] = ""
-		data["change_time"] = ""
+		data.CreationTime = ""
+		data.AccessTime = ""
+		data.ChangeTime = ""
 	}
 
-	data["attributes"] = getFileAttributes(fc.Info)
-	data["permissions"] = fc.Info.Mode().Perm().String()
+	data.Attributes = getFileAttributes(fc.Info)
+	data.Permissions = fc.Info.Mode().Perm().String()
 
-	owner, err := getFileOwnership(fc.Path)
+	owner, err := getFileOwnership(fc.Path, fc.Info)
 	if err == nil {
-		data["owner"] = owner
+		data.Owner = owner
 	} else {
-		data["owner"] = ""
+		data.Owner = ""
 	}
 
 	if fileID := getFileID(fc.Path, fc.Info); fileID != "" {
-		data["file_id"] = fileID
+		data.FileID = fileID
 	}
 
 	return nil
@@ -150,10 +159,10 @@ func (m xattrModule) Name() string { return "xattrs" }
 
 func (m xattrModule) Enabled(cfg *config.Config) bool { return cfg.CollectXattrs }
 
-func (m xattrModule) Collect(ctx context.Context, fc *FileContext, data map[string]interface{}) error {
+func (m xattrModule) Collect(ctx context.Context, fc *FileContext, data *FileRecord) error {
 	xattrs, err := getXattrs(fc.Path, fc.Cfg.XattrMaxValueSize)
 	if err == nil && len(xattrs) > 0 {
-		data["xattrs"] = xattrs
+		data.Xattrs = xattrs
 	}
 	return nil
 }
@@ -164,10 +173,10 @@ func (m aclModule) Name() string { return "acl" }
 
 func (m aclModule) Enabled(cfg *config.Config) bool { return cfg.CollectACL }
 
-func (m aclModule) Collect(ctx context.Context, fc *FileContext, data map[string]interface{}) error {
+func (m aclModule) Collect(ctx context.Context, fc *FileContext, data *FileRecord) error {
 	acl, err := getFileACL(fc.Path)
 	if err == nil && acl != "" {
-		data["acl"] = acl
+		data.ACL = acl
 	}
 	return nil
 }
@@ -178,10 +187,10 @@ func (m adsModule) Name() string { return "ads" }
 
 func (m adsModule) Enabled(cfg *config.Config) bool { return cfg.ScanADS }
 
-func (m adsModule) Collect(ctx context.Context, fc *FileContext, data map[string]interface{}) error {
+func (m adsModule) Collect(ctx context.Context, fc *FileContext, data *FileRecord) error {
 	streams, err := getAlternateDataStreams(fc.Path)
 	if err == nil && len(streams) > 0 {
-		data["alternate_data_streams"] = streams
+		data.AlternateDataStreams = streams
 	}
 	return nil
 }
@@ -192,8 +201,8 @@ func (m mimeModule) Name() string { return "mime" }
 
 func (m mimeModule) Enabled(cfg *config.Config) bool { return cfg.ScanFiles }
 
-func (m mimeModule) Collect(ctx context.Context, fc *FileContext, data map[string]interface{}) error {
-	data["mime_type"] = fc.MimeType()
+func (m mimeModule) Collect(ctx context.Context, fc *FileContext, data *FileRecord) error {
+	data.MimeType = fc.MimeType()
 	return nil
 }
 
@@ -203,9 +212,9 @@ func (m hashModule) Name() string { return "hashes" }
 
 func (m hashModule) Enabled(cfg *config.Config) bool { return cfg.ScanFiles }
 
-func (m hashModule) Collect(ctx context.Context, fc *FileContext, data map[string]interface{}) error {
+func (m hashModule) Collect(ctx context.Context, fc *FileContext, data *FileRecord) error {
 	hashes := hasher.ComputeHashes(fc.Path, fc.Cfg.HashAlgorithms)
-	data["hashes"] = hashes
+	data.Hashes = hashes
 	return nil
 }
 
@@ -215,9 +224,9 @@ func (m metadataModule) Name() string { return "metadata" }
 
 func (m metadataModule) Enabled(cfg *config.Config) bool { return cfg.ScanFiles }
 
-func (m metadataModule) Collect(ctx context.Context, fc *FileContext, data map[string]interface{}) error {
+func (m metadataModule) Collect(ctx context.Context, fc *FileContext, data *FileRecord) error {
 	meta := metadata.ExtractMetadata(fc.Path, fc.MimeType(), fc.Cfg.MetadataMaxBytes)
-	data["metadata"] = meta
+	data.Metadata = meta
 	return nil
 }
 
@@ -229,7 +238,7 @@ func (m fuzzyModule) Name() string { return "fuzzy" }
 
 func (m fuzzyModule) Enabled(cfg *config.Config) bool { return cfg.FuzzyHash && len(m.hashers) > 0 }
 
-func (m fuzzyModule) Collect(ctx context.Context, fc *FileContext, data map[string]interface{}) error {
+func (m fuzzyModule) Collect(ctx context.Context, fc *FileContext, data *FileRecord) error {
 	if !m.Enabled(fc.Cfg) {
 		return nil
 	}
@@ -252,59 +261,118 @@ func (m fuzzyModule) Collect(ctx context.Context, fc *FileContext, data map[stri
 		}
 	}
 	if len(results) > 0 {
-		data["fuzzy_hashes"] = results
+		data.FuzzyHashes = results
 	}
 	return nil
 }
 
-type sensitiveModule struct{}
+type sensitiveModule struct {
+	patternNames []string
+}
 
 func (m sensitiveModule) Name() string { return "sensitive" }
 
 func (m sensitiveModule) Enabled(cfg *config.Config) bool { return cfg.ScanSensitive }
 
-func (m sensitiveModule) Collect(ctx context.Context, fc *FileContext, data map[string]interface{}) error {
+func (m sensitiveModule) Collect(ctx context.Context, fc *FileContext, data *FileRecord) error {
 	if !fc.ShouldSearchContent() || len(fc.SensitivePatterns) == 0 {
 		return nil
 	}
-	content, err := fc.ContentText()
-	if err != nil {
-		return err
-	}
-	matches, counts := scanForSensitiveData(
-		content,
-		fc.SensitivePatterns,
-		fc.Cfg.SensitiveMaxPerType,
-		fc.Cfg.SensitiveMaxTotal,
+	criticalPatterns := filterCriticalPatternNames(m.patternNames, fc.SensitivePatterns)
+	var (
+		matches map[string][]string
+		counts  map[string]int
+		err     error
 	)
+	if shouldUseDeterministicStreamSensitiveScan(
+		fc.Cfg.ContentReadMode,
+		fc.Cfg.SensitiveEngine,
+		fc.Cfg.SensitiveLongtail,
+		criticalPatterns,
+		len(fc.Cfg.SearchTerms) > 0,
+	) {
+		maxSize := fc.Cfg.MaxFileSize
+		if maxSize <= 0 || maxSize > maxContentScanBytes {
+			maxSize = maxContentScanBytes
+		}
+		matches, counts, err = scanSensitiveDataDeterministicStream(
+			fc.Path,
+			fc.SensitivePatterns,
+			criticalPatterns,
+			fc.Cfg.SensitiveMaxPerType,
+			fc.Cfg.SensitiveMaxTotal,
+			fc.Cfg.StreamChunkSize,
+			fc.Cfg.StreamOverlapBytes,
+			maxSize,
+		)
+		if err != nil {
+			return err
+		}
+	} else {
+		content, err := fc.ContentBytes()
+		if err != nil {
+			return err
+		}
+		matches, counts = scanForSensitiveDataAdvanced(
+			content,
+			fc.SensitivePatterns,
+			fc.Cfg.SensitiveMaxPerType,
+			fc.Cfg.SensitiveMaxTotal,
+			fc.Cfg.SensitiveEngine,
+			fc.Cfg.SensitiveLongtail,
+			fc.Cfg.SensitiveWindowBytes,
+			m.patternNames,
+		)
+	}
 	if len(matches) > 0 {
 		matches = redactSensitiveData(matches, fc.Cfg.RedactSensitive)
-		data["sensitive_data"] = matches
-		data["sensitive_data_match_counts"] = counts
+		data.SensitiveData = matches
+		data.SensitiveDataMatchCounts = counts
 		if sensitiveMatchesMayBeTruncated(counts, fc.Cfg.SensitiveMaxPerType, fc.Cfg.SensitiveMaxTotal) {
-			data["sensitive_data_truncated"] = true
+			data.SensitiveDataTruncated = true
 		}
 	}
 	return nil
 }
 
-type searchModule struct{}
+type searchModule struct {
+	counter prefilter.SearchCounter
+}
 
 func (m searchModule) Name() string { return "search" }
 
 func (m searchModule) Enabled(cfg *config.Config) bool { return len(cfg.SearchTerms) > 0 }
 
-func (m searchModule) Collect(ctx context.Context, fc *FileContext, data map[string]interface{}) error {
+func (m searchModule) Collect(ctx context.Context, fc *FileContext, data *FileRecord) error {
 	if !fc.ShouldSearchContent() {
 		return nil
 	}
-	content, err := fc.ContentText()
-	if err != nil {
-		return err
+	counter := m.counter
+	if counter == nil {
+		counter = prefilter.BuildSearchCounter(fc.Cfg.SearchTerms)
 	}
-	hits := scanForSearchTerms(content, fc.Cfg.SearchTerms)
+	var (
+		hits map[string]int
+		err  error
+	)
+	if shouldUseStreamSearchCounter(fc.Cfg.ContentReadMode, fc.content != nil, len(fc.Cfg.SearchTerms)) {
+		maxSize := fc.Cfg.MaxFileSize
+		if maxSize <= 0 || maxSize > maxContentScanBytes {
+			maxSize = maxContentScanBytes
+		}
+		hits, err = countSearchTermsStream(fc.Path, fc.Cfg.SearchTerms, fc.Cfg.StreamChunkSize, maxSize)
+		if err != nil {
+			return err
+		}
+	} else {
+		content, readErr := fc.ContentBytes()
+		if readErr != nil {
+			return readErr
+		}
+		hits = counter.CountBytes(content)
+	}
 	if len(hits) > 0 {
-		data["search_hits"] = hits
+		data.SearchHits = hits
 	}
 	return nil
 }
@@ -313,7 +381,7 @@ func buildFuzzyHashers(cfg *config.Config) []fuzzy.Hasher {
 	if !cfg.FuzzyHash && len(cfg.FuzzyAlgorithms) == 0 {
 		return nil
 	}
-	hashers := []fuzzy.Hasher{}
+	hashers := make([]fuzzy.Hasher, 0, len(cfg.FuzzyAlgorithms))
 	for _, name := range cfg.FuzzyAlgorithms {
 		hasher, ok := fuzzy.Lookup(name)
 		if !ok {

@@ -6,11 +6,13 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
 	"safnari/config"
 	"safnari/logger"
+	"safnari/systeminfo"
 
 	"go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploghttp"
 	otelLog "go.opentelemetry.io/otel/log"
@@ -258,7 +260,8 @@ func toLogValue(value interface{}) otelLog.Value {
 		return otelLog.MapValue(toLogKeyValues(v)...)
 	case map[string]string:
 		kvs := make([]otelLog.KeyValue, 0, len(v))
-		for k, val := range v {
+		for _, k := range sortedStringKeys(v) {
+			val := v[k]
 			kvs = append(kvs, otelLog.String(k, val))
 		}
 		return otelLog.MapValue(kvs...)
@@ -306,7 +309,8 @@ func toLogValue(value interface{}) otelLog.Value {
 
 func toLogKeyValues(values map[string]interface{}) []otelLog.KeyValue {
 	kvs := make([]otelLog.KeyValue, 0, len(values))
-	for key, value := range values {
+	for _, key := range sortedInterfaceKeys(values) {
+		value := values[key]
 		kvs = append(kvs, otelLog.KeyValue{Key: key, Value: toLogValue(value)})
 	}
 	return kvs
@@ -374,7 +378,8 @@ func fileSemanticAttributes(data map[string]interface{}, policy otelPolicy) []ot
 
 	if hashes := getStringMapField(data, "hashes"); len(hashes) > 0 {
 		kvs = append(kvs, otelLog.KeyValue{Key: "safnari.file.hashes", Value: toLogValue(hashes)})
-		for algo, value := range hashes {
+		for _, algo := range sortedStringKeys(hashes) {
+			value := hashes[algo]
 			if value == "" {
 				continue
 			}
@@ -384,7 +389,8 @@ func fileSemanticAttributes(data map[string]interface{}, policy otelPolicy) []ot
 
 	if hashes := getStringMapField(data, "fuzzy_hashes"); len(hashes) > 0 {
 		kvs = append(kvs, otelLog.KeyValue{Key: "safnari.file.fuzzy_hashes", Value: toLogValue(hashes)})
-		for algo, value := range hashes {
+		for _, algo := range sortedStringKeys(hashes) {
+			value := hashes[algo]
 			if value == "" {
 				continue
 			}
@@ -551,6 +557,89 @@ func payloadToMap(payload interface{}) map[string]interface{} {
 			out[key] = value
 		}
 		return out
+	case *Metrics:
+		if v == nil {
+			return nil
+		}
+		return map[string]interface{}{
+			"start_time":      v.StartTime,
+			"end_time":        v.EndTime,
+			"total_files":     v.TotalFiles,
+			"files_scanned":   v.FilesScanned,
+			"files_processed": v.FilesProcessed,
+			"total_processes": v.TotalProcesses,
+		}
+	case Metrics:
+		return map[string]interface{}{
+			"start_time":      v.StartTime,
+			"end_time":        v.EndTime,
+			"total_files":     v.TotalFiles,
+			"files_scanned":   v.FilesScanned,
+			"files_processed": v.FilesProcessed,
+			"total_processes": v.TotalProcesses,
+		}
+	case *systeminfo.ProcessInfo:
+		if v == nil {
+			return nil
+		}
+		return map[string]interface{}{
+			"pid":            v.PID,
+			"ppid":           v.PPID,
+			"name":           v.Name,
+			"cpu_percent":    v.CPUPercent,
+			"memory_percent": v.MemoryPercent,
+			"cmdline":        v.Cmdline,
+			"username":       v.Username,
+			"exe":            v.Exe,
+			"start_time":     v.StartTime,
+		}
+	case systeminfo.ProcessInfo:
+		return map[string]interface{}{
+			"pid":            v.PID,
+			"ppid":           v.PPID,
+			"name":           v.Name,
+			"cpu_percent":    v.CPUPercent,
+			"memory_percent": v.MemoryPercent,
+			"cmdline":        v.Cmdline,
+			"username":       v.Username,
+			"exe":            v.Exe,
+			"start_time":     v.StartTime,
+		}
+	case *systeminfo.SystemInfo:
+		if v == nil {
+			return nil
+		}
+		return map[string]interface{}{
+			"os_version":              v.OSVersion,
+			"installed_patches":       v.InstalledPatches,
+			"running_processes":       v.RunningProcesses,
+			"startup_programs":        v.StartupPrograms,
+			"installed_apps":          v.InstalledApps,
+			"network_interfaces":      v.NetworkInterfaces,
+			"open_connections":        v.OpenConnections,
+			"running_services":        v.RunningServices,
+			"users":                   v.Users,
+			"groups":                  v.Groups,
+			"admins":                  v.Admins,
+			"scheduled_tasks":         v.ScheduledTasks,
+			"running_processes_count": len(v.RunningProcesses),
+		}
+	case systeminfo.SystemInfo:
+		return map[string]interface{}{
+			"os_version":              v.OSVersion,
+			"installed_patches":       v.InstalledPatches,
+			"running_processes":       v.RunningProcesses,
+			"startup_programs":        v.StartupPrograms,
+			"installed_apps":          v.InstalledApps,
+			"network_interfaces":      v.NetworkInterfaces,
+			"open_connections":        v.OpenConnections,
+			"running_services":        v.RunningServices,
+			"users":                   v.Users,
+			"groups":                  v.Groups,
+			"admins":                  v.Admins,
+			"scheduled_tasks":         v.ScheduledTasks,
+			"running_processes_count": len(v.RunningProcesses),
+		}
 	default:
 		data, err := json.Marshal(payload)
 		if err != nil {
@@ -729,4 +818,22 @@ func appendInterfaceAttr(kvs []otelLog.KeyValue, key string, value interface{}) 
 		return kvs
 	}
 	return append(kvs, otelLog.KeyValue{Key: key, Value: converted})
+}
+
+func sortedStringKeys(values map[string]string) []string {
+	keys := make([]string, 0, len(values))
+	for key := range values {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
+func sortedInterfaceKeys(values map[string]interface{}) []string {
+	keys := make([]string, 0, len(values))
+	for key := range values {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	return keys
 }

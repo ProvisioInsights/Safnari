@@ -4,10 +4,12 @@
 package scanner
 
 import (
+	"os"
+
 	"golang.org/x/sys/windows"
 )
 
-func getFileOwnership(path string) (string, error) {
+func getFileOwnership(path string, _ os.FileInfo) (string, error) {
 	// Get the security descriptor
 	sd, err := windows.GetNamedSecurityInfo(
 		path,

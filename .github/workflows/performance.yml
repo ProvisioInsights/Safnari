@@ -27,17 +27,83 @@ jobs:
         with:
           go-version-file: src/go.mod
           cache-dependency-path: src/go.sum
-      - run: go test -run '^$' -bench=. -benchmem ./... | tee benchmark.txt
+
+      - name: Verify parity fixtures
+        run: go test ./scanner -run TestV2OutputNDJSONDeterministicAcrossProfiles -count=1
         working-directory: src
         shell: bash
-      - run: GOEXPERIMENT=jsonv2 go test -run '^$' -bench=. -benchmem -tags jsonv2 ./... | tee benchmark-jsonv2.txt
-        working-directory: src
+
+      - name: Run ultra benchmark harness
+        run: make bench-ultra
         shell: bash
+
+      - name: Enforce performance gate
+        run: make bench-gate
+        shell: bash
+
+      - name: Capture benchmark artifact directory
+        id: bench_dir
+        run: |
+          latest="$(ls -dt artifacts/bench/[0-9]* | head -n1)"
+          echo "dir=$latest" >> "$GITHUB_OUTPUT"
+        shell: bash
+
       - uses: actions/upload-artifact@v4
         with:
           name: benchmarks-${{ matrix.goos }}-${{ matrix.goarch }}
-          path: src/benchmark.txt
+          path: ${{ steps.bench_dir.outputs.dir }}
+
+      - name: Capture gate artifact directory
+        id: gate_dir
+        run: |
+          latest="$(ls -dt artifacts/bench/gate-* | head -n1)"
+          echo "dir=$latest" >> "$GITHUB_OUTPUT"
+        shell: bash
+
       - uses: actions/upload-artifact@v4
         with:
-          name: benchmarks-jsonv2-${{ matrix.goos }}-${{ matrix.goarch }}
-          path: src/benchmark-jsonv2.txt
+          name: perf-gate-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: ${{ steps.gate_dir.outputs.dir }}
+
+      - name: Generate PGO profile
+        if: matrix.os == 'ubuntu-latest'
+        run: make profile-generate
+        shell: bash
+
+      - name: Upload PGO profile
+        if: matrix.os == 'ubuntu-latest'
+        uses: actions/upload-artifact@v4
+        with:
+          name: pgo-profile-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: src/pgo/default.pgo
+
+      - name: Build with PGO
+        if: matrix.os == 'ubuntu-latest'
+        run: make build-pgo-ultra
+        shell: bash
+
+  simd-experiment:
+    continue-on-error: true
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v4
+        with:
+          go-version-file: src/go.mod
+          cache-dependency-path: src/go.sum
+
+      - name: Run SIMD benchmark comparison
+        run: make bench-simd
+        shell: bash
+
+      - name: Capture SIMD artifact directory
+        id: simd_dir
+        run: |
+          latest="$(ls -dt artifacts/bench/simd-* | head -n1)"
+          echo "dir=$latest" >> "$GITHUB_OUTPUT"
+        shell: bash
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: simd-benchmarks-linux-amd64
+          path: ${{ steps.simd_dir.outputs.dir }}

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"safnari/config"
+	"safnari/diag"
 	"safnari/logger"
 	"safnari/output"
 	"safnari/scanner"
@@ -91,6 +92,18 @@ func main() {
 		cancel()
 	}()
 
+	diagController := diag.NewController(diag.Options{
+		SlowScanThreshold: cfg.DiagSlowScanThreshold,
+		Dir:               cfg.DiagDir,
+		GoroutineLeak:     cfg.DiagGoroutineLeak,
+		ProgressCountFn: func() int64 {
+			return int64(writer.FilesScanned())
+		},
+		DumpFlightRecorder: tracing.WriteFlightRecorder,
+	})
+	diagController.Start(ctx)
+	defer diagController.Close()
+
 	go handleSignals(cancel, &metrics, writer, cfg.TraceFlight, cfg.TraceFlightFile)
 
 	// Start scanning
@@ -113,6 +126,17 @@ func main() {
 func handleSignals(cancelFunc context.CancelFunc, metrics *output.Metrics, w *output.Writer, traceFlight bool, traceFlightFile string) {
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
+	handleSignalEvent(cancelFunc, metrics, w, traceFlight, traceFlightFile, sigChan)
+}
+
+func handleSignalEvent(
+	cancelFunc context.CancelFunc,
+	metrics *output.Metrics,
+	w *output.Writer,
+	traceFlight bool,
+	traceFlightFile string,
+	sigChan <-chan os.Signal,
+) {
 	<-sigChan
 	logger.Info("Interrupt signal received. Shutting down...")
 

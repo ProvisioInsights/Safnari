@@ -33,7 +33,7 @@ make build
 ```
 
 The resulting binary is placed in the `bin` directory. Safnari enables the experimental JSON v2
-encoder by default for better throughput. To disable it, set `JSONV2=0` when building or testing.
+encoder by default for better throughput.
 
 To include runtime tracing, pass the `trace` build tag:
 
@@ -64,6 +64,22 @@ make lint
 make test
 ```
 
+Generate baseline benchmarks and profile-guided optimization (PGO) inputs with:
+
+```sh
+make bench-ultra
+make bench-gate
+make profile-generate
+make build-pgo-ultra
+```
+
+Run periodic escape-analysis snapshots when tuning allocations:
+
+```sh
+cd src
+go test ./scanner -run '^$' -gcflags=all=-m=2 > ../artifacts/escape-analysis-scanner.txt 2>&1
+```
+
 ## Usage
 
 Run the compiled binary with desired flags. Running with `-h` prints all options.
@@ -86,14 +102,15 @@ Safnari accepts the following flags. Each description lists the default value in
 - `--scan-sensitive`: Enable sensitive data scanning (default: `true`).
 - `--scan-processes`: Enable process scanning (default: `true`).
 - `--collect-system-info`: Collect system information (default: `true`).
-- `--format`: Output format: json or csv (default: `json`).
-- `--output`: Output file name (default: `safnari-<timestamp>-<unix>.json`).
+- `--format`: Output format: json (default: `json`).
+- `--output`: Output file name (default: `safnari-<timestamp>-<unix>.ndjson`).
 - `--concurrency`: Concurrency level (default: number of logical CPUs; effective value is adjusted
   by `--nice` unless `--concurrency` is set).
 - `--nice`: Nice level: high, medium, or low (default: `medium`).
 - `--hashes`: Comma-separated list of hash algorithms (default: `md5,sha1,sha256`).
 - `--search`: Comma-separated list of search terms (default: none).
-- `--redact-sensitive`: Redact sensitive matches in output: mask or hash (default: `mask`). Use `none` to disable.
+- `--redact-sensitive`: Redact sensitive matches in output: mask or hash
+  (default: `mask`). Use `none` to disable.
 - `--include`: Comma-separated list of include patterns (default: none).
 - `--exclude`: Comma-separated list of exclude patterns (default: none).
 - `--max-file-size`: Maximum file size to process in bytes (default: `10485760`).
@@ -112,14 +129,15 @@ Safnari accepts the following flags. Each description lists the default value in
 - `--custom-patterns`: Custom sensitive data patterns as a JSON object mapping
   names to regexes (default: none).
 - `--fuzzy-hash`: Enable fuzzy hashing (TLSH) (default: `false`).
-- `--fuzzy-algorithms`: Comma-separated list of fuzzy hash algorithms (default: `tlsh` when fuzzy hashing enabled).
+- `--fuzzy-algorithms`: Comma-separated list of fuzzy hash algorithms
+  (default: `tlsh` when fuzzy hashing enabled).
 - `--fuzzy-min-size`: Minimum file size in bytes for fuzzy hashing (default: `256`).
 - `--fuzzy-max-size`: Maximum file size in bytes for fuzzy hashing (default: `20971520`).
 - `--delta-scan`: Only scan files modified since the last run (default: `false`).
 - `--last-scan-file`: Path to timestamp file for delta scans (default: `.safnari_last_scan`).
 - `--last-scan`: Timestamp of last scan in RFC3339 format (e.g.,
   `2006-01-02T15:04:05Z`) (default: none).
-- `--skip-count`: Skip initial file counting to start scanning immediately (default: `false`).
+- `--skip-count`: Skip initial file counting to start scanning immediately (default: `true`).
 - `--collect-xattrs`: Collect extended attributes (default: `true`).
 - `--xattr-max-value-size`: Max bytes of xattr values to capture (default: `1024`).
 - `--collect-acl`: Collect ACLs (default: `true`).
@@ -131,6 +149,31 @@ Safnari accepts the following flags. Each description lists the default value in
 - `--auto-tune`: Auto-tune resource usage (default: `true`).
 - `--auto-tune-interval`: Auto-tune interval (default: `5s`).
 - `--auto-tune-target-cpu`: Auto-tune target CPU percent (default: `60`).
+- `--auto-tune-runtime-metrics`: Blend runtime scheduler/heap signals into auto-tune decisions
+  (default: `true`).
+- `--auto-tune-target-runq`: Target run-queue pressure ratio used by runtime auto-tune
+  (default: `1.0`).
+- `--auto-tune-target-latency-ms`: Target scheduler latency in milliseconds for runtime auto-tune
+  (default: `25`).
+- `--perf-profile`: Performance profile: `adaptive` or `ultra` (default: `adaptive`).
+- `--sensitive-engine`: Sensitive scan engine: `auto`, `deterministic`, or `hybrid`
+  (default: `auto`).
+- `--sensitive-longtail`: Long-tail sensitive behavior: `off`, `sampled`, or `full`
+  (default: `sampled`).
+- `--sensitive-window-bytes`: Window size used by sampled long-tail mode (default: `4096`).
+- `--content-read-mode`: File content reader mode: `auto`, `stream`, or `mmap`
+  (default: `auto`).
+- `--stream-chunk-size`: Streaming chunk size in bytes (default: `262144`).
+- `--stream-overlap-bytes`: Streaming overlap bytes between chunks (default: `512`).
+- `--mmap-min-size`: Minimum file size in bytes before mmap is considered in `auto` mode
+  (default: `131072`).
+- `--json-layout`: JSON layout. `ndjson` is the only supported value (default: `ndjson`).
+- `--simd-fastpath`: Enable SIMD-gated text/token fast paths when available in the binary
+  (default: `false`).
+- `--diag-slow-scan-threshold`: Emit diagnostics artifacts when progress stalls past this duration
+  (default: `0`, disabled).
+- `--diag-dir`: Directory used for diagnostics artifacts (default: current directory).
+- `--diag-goroutine-leak`: Emit a goroutine leak profile on shutdown (default: `false`).
 - `--otel-endpoint`: OTLP/HTTP logs endpoint (default: none).
 - `--otel-headers`: Comma-separated OTEL headers (default: none).
 - `--otel-service-name`: OTEL service name (default: `safnari`).
@@ -145,11 +188,8 @@ If only `--exclude-sensitive-data-types` is provided, Safnari scans all built-in
 patterns except those excluded. When both include and exclude flags are set, the
 exclusion list removes types from the inclusion list.
 
-When `--format csv` is selected, Safnari writes a single CSV file with a `record_type`
-column. The file starts with `system_info` and `process` rows, followed by `file` rows,
-and finishes with a `metrics` row. Complex fields such as hashes, metadata, sensitive
-data, and search hits are stored as JSON-encoded strings in their respective columns.
-All outputs include a `schema_version` field to support forward compatibility.
+Safnari writes NDJSON only. Each line is a schema v2 record with `record_type`,
+`schema_version`, and `payload`.
 
 Metrics include start/end timestamps, total files discovered, files scanned, files written to the
 output, and total running processes.
@@ -158,32 +198,35 @@ See `./bin/safnari --help` for detailed usage information.
 
 ## OTEL Export
 
-When `--otel-endpoint` is set (or OTEL environment variables are present), Safnari exports records over OTLP/HTTP Logs. The exported log body contains the same fields as the local JSON records, and each log includes `record_type` and `schema_version` attributes for reconstruction.
+When `--otel-endpoint` is set (or OTEL environment variables are present), Safnari exports
+records over OTLP/HTTP Logs. The exported log body contains the same fields as the local JSON
+records, and each log includes `record_type` and `schema_version` attributes for reconstruction.
 
 ## Capability Matrix
 
-The table below summarizes what Safnari collects by default across platforms. Optional features can be disabled with the listed flags.
+The table below summarizes what Safnari collects by default across platforms. Optional features can
+be disabled with the listed flags.
 
 | Capability | macOS | Linux | Windows | Request / Flag | Privilege |
 | --- | --- | --- | --- | --- | --- |
 | Baseline file inventory | Yes | Yes | Yes | `--scan-files` | User |
 | Cryptographic hashes (MD5/SHA1/SHA256) | Yes | Yes | Yes | `--hashes` | User |
-| Fuzzy hashing (TLSH) | Yes | Yes | Yes | `--fuzzy-hash`, `--fuzzy-algorithms`, size limits | User |
+| Fuzzy hashing (TLSH) | Yes | Yes | Yes | `--fuzzy-hash`, `--fuzzy-algorithms` | User |
 | File metadata (EXIF/PDF) | Yes | Yes | Yes | `--scan-files` | User |
 | File times (create/access/change) | Yes | Yes | Yes | `--scan-files` | User |
 | File ID (inode/volume+file index) | Yes | Yes | Yes | `--scan-files` | User |
-| Extended attributes (xattrs) | Yes | Yes | No | `--collect-xattrs`, `--xattr-max-value-size` | User |
+| Xattrs | Yes | Yes | No | `--collect-xattrs`, `--xattr-max-value-size` | User |
 | ACLs | No | No | Yes | `--collect-acl` | Admin for protected paths |
 | Alternate Data Streams | No | No | Yes | `--scan-ads` | Admin for protected paths |
-| Sensitive data scan | Yes | Yes | Yes | `--scan-sensitive`, include/exclude/custom patterns | User |
+| Sensitive data scan | Yes | Yes | Yes | `--scan-sensitive`, include/exclude/custom | User |
 | Search terms | Yes | Yes | Yes | `--search` | User |
-| Running processes | Yes | Yes | Yes | `--scan-processes`, `--extended-process-info` | Admin for full detail |
-| System info (OS, patches, apps, startup, services) | Yes | Yes | Yes | `--collect-system-info` | User (some sources may need Admin) |
-| Users / Groups / Admins | Yes | Yes | Yes | `--collect-users`, `--collect-groups`, `--collect-admins` | User (Admin for full detail) |
+| Processes | Yes | Yes | Yes | `--scan-processes`, `--extended-process-info` | Admin |
+| System info (OS, apps, services) | Yes | Yes | Yes | `--collect-system-info` | User/Admin mix |
+| Users / Groups / Admins | Yes | Yes | Yes | `--collect-users/groups/admins` | User/Admin |
 | Scheduled tasks | Yes | Yes | Yes | `--collect-scheduled-tasks` | User (Admin for system-wide) |
 | Network interfaces | Yes | Yes | Yes | `--collect-system-info` | User |
 | Open connections | Yes | Yes | Yes | `--collect-system-info` | Admin for full detail |
-| Auto-tuning (CPU/I/O) | Yes | Yes | Yes | `--auto-tune`, `--auto-tune-interval`, `--auto-tune-target-cpu` | User |
+| Auto-tuning (CPU/I/O) | Yes | Yes | Yes | `--auto-tune` + related targets | User |
 
 ## Examples
 
@@ -196,7 +239,7 @@ Scan a home directory, compute SHA-256 hashes, and search for a password string:
 Limit concurrency and write results to a custom file:
 
 ```sh
-./bin/safnari --path /var/log --concurrency 4 --output logs.json
+./bin/safnari --path /var/log --concurrency 4 --output logs.ndjson
 ```
 
 Additional guides and examples will be added here over time.

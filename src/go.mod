@@ -1,10 +1,9 @@
 module safnari
 
-go 1.25.0
-
-toolchain go1.25.7
+go 1.26.0
 
 require (
+	github.com/cloudflare/ahocorasick v0.0.0-20240916140611-054963ec9396
 	github.com/djherbis/times v1.6.0
 	github.com/glaslos/tlsh v0.0.0-20250812133135-16f3e7cea8ff
 	github.com/h2non/filetype v1.1.3
@@ -18,6 +17,7 @@ require (
 	go.opentelemetry.io/otel/log v0.16.0
 	go.opentelemetry.io/otel/sdk v1.40.0
 	go.opentelemetry.io/otel/sdk/log v0.16.0
+	golang.org/x/exp v0.0.0-20260218203240-3dfff04db8fa
 	golang.org/x/sys v0.40.0
 	golang.org/x/time v0.10.0
 )

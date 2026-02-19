@@ -1,0 +1,4 @@
+notes.txt
+subdir/config.json
+subdir/secrets.env
+

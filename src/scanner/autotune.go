@@ -4,6 +4,7 @@ import (
 	"context"
 	"math"
 	"runtime"
+	runtimemetrics "runtime/metrics"
 	"time"
 
 	"safnari/config"
@@ -15,20 +16,24 @@ import (
 )
 
 type autoTuneState struct {
-	concurrency    int
-	ioLimit        int
-	maxIOLimit     int
-	cpuEWMA        float64
-	cpuPID         pidController
-	lastProcessed  int64
-	throughputEWMA float64
-	queueWaitEWMA  float64
+	concurrency      int
+	ioLimit          int
+	maxIOLimit       int
+	cpuEWMA          float64
+	runQueueEWMA     float64
+	schedLatencyEWMA float64
+	heapLiveEWMA     float64
+	cpuPID           pidController
+	lastProcessed    int64
+	throughputEWMA   float64
+	queueWaitEWMA    float64
 }
 
 type autoTuneTelemetry struct {
 	queueDepthFn     func() int
 	queueCapacityFn  func() int
 	processedCountFn func() int64
+	runtimeSampleFn  func() runtimeSignal
 }
 
 func (t autoTuneTelemetry) queueDepth() int {
@@ -54,6 +59,107 @@ func (t autoTuneTelemetry) processedCount() int64 {
 		return 0
 	}
 	return value
+}
+
+func (t autoTuneTelemetry) runtimeSignal() (runtimeSignal, bool) {
+	if t.runtimeSampleFn != nil {
+		sample := t.runtimeSampleFn()
+		return sample, sample.valid()
+	}
+	sample := sampleRuntimeSignal()
+	return sample, sample.valid()
+}
+
+type runtimeSignal struct {
+	runQueueRatio float64
+	latencySec    float64
+	heapLiveBytes float64
+}
+
+func (s runtimeSignal) valid() bool {
+	return s.runQueueRatio >= 0 || s.latencySec >= 0 || s.heapLiveBytes >= 0
+}
+
+func sampleRuntimeSignal() runtimeSignal {
+	// Keys:
+	// - /sched/goroutines:goroutines
+	// - /sched/latencies:seconds
+	// - /gc/heap/live:bytes
+	samples := []runtimemetrics.Sample{
+		{Name: "/sched/goroutines:goroutines"},
+		{Name: "/sched/latencies:seconds"},
+		{Name: "/gc/heap/live:bytes"},
+	}
+	runtimemetrics.Read(samples)
+
+	signal := runtimeSignal{
+		runQueueRatio: -1,
+		latencySec:    -1,
+		heapLiveBytes: -1,
+	}
+
+	if value := samples[0].Value; value.Kind() == runtimemetrics.KindUint64 {
+		goroutines := float64(value.Uint64())
+		procs := float64(maxInt(1, runtime.GOMAXPROCS(0)))
+		signal.runQueueRatio = goroutines / procs
+	}
+
+	if value := samples[1].Value; value.Kind() == runtimemetrics.KindFloat64Histogram {
+		h := value.Float64Histogram()
+		if h != nil {
+			latency := histogramQuantileFloat64(h, 0.95)
+			if latency >= 0 {
+				signal.latencySec = latency
+			}
+		}
+	}
+
+	if value := samples[2].Value; value.Kind() == runtimemetrics.KindUint64 {
+		signal.heapLiveBytes = float64(value.Uint64())
+	}
+
+	return signal
+}
+
+func histogramQuantileFloat64(hist *runtimemetrics.Float64Histogram, quantile float64) float64 {
+	if hist == nil || len(hist.Counts) == 0 || len(hist.Buckets) == 0 {
+		return -1
+	}
+	if quantile < 0 {
+		quantile = 0
+	}
+	if quantile > 1 {
+		quantile = 1
+	}
+	var total uint64
+	for _, count := range hist.Counts {
+		total += count
+	}
+	if total == 0 {
+		return -1
+	}
+	target := uint64(math.Ceil(float64(total) * quantile))
+	if target == 0 {
+		target = 1
+	}
+	var cumulative uint64
+	for idx, count := range hist.Counts {
+		cumulative += count
+		if cumulative < target {
+			continue
+		}
+		if idx+1 >= len(hist.Buckets) {
+			break
+		}
+		upper := hist.Buckets[idx+1]
+		if math.IsInf(upper, 0) {
+			if idx < len(hist.Buckets) {
+				upper = hist.Buckets[idx]
+			}
+		}
+		return upper
+	}
+	return -1
 }
 
 type pidController struct {
@@ -211,13 +317,43 @@ func computeAutoTuneDeltas(cfg *config.Config, state *autoTuneState, cpuSample f
 		}
 	}
 
+	runQueueError := 0.0
+	latencyError := 0.0
+	heapPressure := 0.0
+	hasRuntimeSignal := false
+	if cfg.AutoTuneRuntimeMetrics {
+		if runtimeSignal, ok := telemetry.runtimeSignal(); ok {
+			hasRuntimeSignal = true
+			if runtimeSignal.runQueueRatio >= 0 {
+				state.runQueueEWMA = ewma(state.runQueueEWMA, runtimeSignal.runQueueRatio, 0.30)
+				runQueueError = state.runQueueEWMA - cfg.AutoTuneTargetRunQ
+			}
+			if runtimeSignal.latencySec >= 0 {
+				state.schedLatencyEWMA = ewma(state.schedLatencyEWMA, runtimeSignal.latencySec, 0.30)
+				targetLatency := float64(cfg.AutoTuneTargetLatencyMs) / 1000.0
+				if targetLatency > 0 {
+					latencyError = (state.schedLatencyEWMA - targetLatency) / targetLatency
+				}
+			}
+			if runtimeSignal.heapLiveBytes >= 0 {
+				prevHeapEWMA := state.heapLiveEWMA
+				state.heapLiveEWMA = ewma(state.heapLiveEWMA, runtimeSignal.heapLiveBytes, 0.20)
+				if prevHeapEWMA > 0 {
+					heapPressure = clampFloat((runtimeSignal.heapLiveBytes-prevHeapEWMA)/prevHeapEWMA, -1.0, 1.0)
+				}
+			}
+		}
+	}
+
 	// Blend CPU control with queue-depth and latency pressure. Positive queue/wait error means
 	// backlog is growing faster than desired and we should scale up despite low CPU.
 	queueControl := queueError*2.2 + waitError*1.4
-	control := cpuControl + queueControl
+	runtimeControl := runQueueError*1.8 + latencyError*1.6 - heapPressure*0.8
+	control := cpuControl + queueControl + runtimeControl
 
 	// Inside combined deadband, decay integral to avoid hunting around the setpoint.
-	if math.Abs(cpuError) <= deadband && (!hasQueueSignal || (math.Abs(queueError) <= 0.05 && math.Abs(waitError) <= 0.20)) {
+	inRuntimeDeadband := !hasRuntimeSignal || (math.Abs(runQueueError) <= 0.05 && math.Abs(latencyError) <= 0.20 && math.Abs(heapPressure) <= 0.15)
+	if math.Abs(cpuError) <= deadband && (!hasQueueSignal || (math.Abs(queueError) <= 0.05 && math.Abs(waitError) <= 0.20)) && inRuntimeDeadband {
 		state.cpuPID.integral *= 0.85
 		return 0, 0
 	}

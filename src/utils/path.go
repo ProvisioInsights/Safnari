@@ -3,29 +3,58 @@ package utils
 import (
 	"path/filepath"
 	"strings"
+	"sync"
 )
 
 // IsPathWithin returns true if the given path is within any of the roots.
 func IsPathWithin(path string, roots []string) bool {
-	resolved, err := filepath.EvalSymlinks(path)
-	if err != nil {
-		resolved = path
+	return getPathGuard(roots).Contains(path)
+}
+
+type pathGuard struct {
+	roots []string
+}
+
+var pathGuardCache sync.Map
+
+func getPathGuard(roots []string) *pathGuard {
+	key := strings.Join(roots, "\x00")
+	if cached, ok := pathGuardCache.Load(key); ok {
+		return cached.(*pathGuard)
 	}
-	absPath, err := filepath.Abs(resolved)
-	if err != nil {
-		return false
-	}
+
+	normalizedRoots := make([]string, 0, len(roots))
 	for _, root := range roots {
-		rResolved, err := filepath.EvalSymlinks(root)
-		if err != nil {
-			rResolved = root
+		if root == "" {
+			continue
 		}
-		absRoot, err := filepath.Abs(rResolved)
+		absRoot, err := filepath.Abs(root)
 		if err != nil {
 			continue
 		}
+		normalizedRoots = append(normalizedRoots, filepath.Clean(absRoot))
+	}
+	guard := &pathGuard{roots: normalizedRoots}
+	actual, _ := pathGuardCache.LoadOrStore(key, guard)
+	return actual.(*pathGuard)
+}
+
+func (g *pathGuard) Contains(path string) bool {
+	if g == nil {
+		return false
+	}
+	absPath, err := filepath.Abs(path)
+	if err != nil {
+		return false
+	}
+	absPath = filepath.Clean(absPath)
+
+	for _, absRoot := range g.roots {
 		rel, err := filepath.Rel(absRoot, absPath)
-		if err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		if err != nil {
+			continue
+		}
+		if rel == "." || (rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))) {
 			return true
 		}
 	}

@@ -16,6 +16,31 @@ import (
 	"time"
 )
 
+var (
+	usersFilePath  = "/etc/passwd"
+	groupsFilePath = "/etc/group"
+
+	linuxScheduledTaskDirs = []string{
+		"/etc/cron.d",
+		"/etc/cron.daily",
+		"/etc/cron.weekly",
+		"/etc/cron.monthly",
+		"/var/spool/cron",
+	}
+	linuxCrontabPath = "/etc/crontab"
+
+	darwinScheduledTaskDirs = func() []string {
+		return []string{
+			"/Library/LaunchAgents",
+			"/Library/LaunchDaemons",
+			filepath.Join(os.Getenv("HOME"), "Library", "LaunchAgents"),
+		}
+	}
+	darwinCrontabOutput = func() ([]byte, error) {
+		return runCommandOutput("crontab", "-l")
+	}
+)
+
 func gatherOSVersion(sysInfo *SystemInfo) error {
 	switch runtime.GOOS {
 	case "linux":
@@ -192,7 +217,7 @@ func gatherRunningServices(sysInfo *SystemInfo) error {
 }
 
 func gatherUsers(sysInfo *SystemInfo) error {
-	users, err := readColonFile("/etc/passwd")
+	users, err := readColonFile(usersFilePath)
 	if err != nil {
 		return err
 	}
@@ -201,7 +226,7 @@ func gatherUsers(sysInfo *SystemInfo) error {
 }
 
 func gatherGroups(sysInfo *SystemInfo) error {
-	groups, err := readColonFile("/etc/group")
+	groups, err := readColonFile(groupsFilePath)
 	if err != nil {
 		return err
 	}
@@ -210,7 +235,7 @@ func gatherGroups(sysInfo *SystemInfo) error {
 }
 
 func gatherAdmins(sysInfo *SystemInfo) error {
-	groups, err := readColonFile("/etc/group")
+	groups, err := readColonFile(groupsFilePath)
 	if err != nil {
 		return err
 	}
@@ -225,39 +250,35 @@ func gatherAdmins(sysInfo *SystemInfo) error {
 func gatherScheduledTasks(sysInfo *SystemInfo) error {
 	switch runtime.GOOS {
 	case "linux":
-		dirs := []string{"/etc/cron.d", "/etc/cron.daily", "/etc/cron.weekly", "/etc/cron.monthly", "/var/spool/cron"}
-		for _, d := range dirs {
-			entries, err := os.ReadDir(d)
-			if err != nil {
-				continue
-			}
-			for _, e := range entries {
-				sysInfo.ScheduledTasks = append(sysInfo.ScheduledTasks, filepath.Join(d, e.Name()))
-			}
-		}
-		if data, err := os.ReadFile("/etc/crontab"); err == nil {
-			for _, line := range parseCronLines(data) {
-				sysInfo.ScheduledTasks = append(sysInfo.ScheduledTasks, line)
-			}
+		sysInfo.ScheduledTasks = append(sysInfo.ScheduledTasks, collectScheduledTaskPaths(linuxScheduledTaskDirs)...)
+		if data, err := os.ReadFile(linuxCrontabPath); err == nil {
+			sysInfo.ScheduledTasks = appendParsedCronTasks(sysInfo.ScheduledTasks, data)
 		}
 	case "darwin":
-		dirs := []string{"/Library/LaunchAgents", "/Library/LaunchDaemons", filepath.Join(os.Getenv("HOME"), "Library", "LaunchAgents")}
-		for _, d := range dirs {
-			entries, err := os.ReadDir(d)
-			if err != nil {
-				continue
-			}
-			for _, e := range entries {
-				sysInfo.ScheduledTasks = append(sysInfo.ScheduledTasks, filepath.Join(d, e.Name()))
-			}
-		}
-		if out, err := runCommandOutput("crontab", "-l"); err == nil {
-			for _, line := range parseCronLines(out) {
-				sysInfo.ScheduledTasks = append(sysInfo.ScheduledTasks, line)
-			}
+		sysInfo.ScheduledTasks = append(sysInfo.ScheduledTasks, collectScheduledTaskPaths(darwinScheduledTaskDirs())...)
+		if out, err := darwinCrontabOutput(); err == nil {
+			sysInfo.ScheduledTasks = appendParsedCronTasks(sysInfo.ScheduledTasks, out)
 		}
 	}
 	return nil
+}
+
+func collectScheduledTaskPaths(dirs []string) []string {
+	tasks := make([]string, 0)
+	for _, d := range dirs {
+		entries, err := os.ReadDir(d)
+		if err != nil {
+			continue
+		}
+		for _, e := range entries {
+			tasks = append(tasks, filepath.Join(d, e.Name()))
+		}
+	}
+	return tasks
+}
+
+func appendParsedCronTasks(tasks []string, data []byte) []string {
+	return append(tasks, parseCronLines(data)...)
 }
 
 func safeCommand(ctx context.Context, name string, args ...string) *exec.Cmd {

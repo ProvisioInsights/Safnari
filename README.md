@@ -21,7 +21,7 @@ configuration flags for filtering, hashing, and output control.
 - Redact sensitive matches in output with `--redact-sensitive` (mask or hash).
 - Toggle system information gathering, file metadata scanning, sensitive data detection, and
   process enumeration independently via CLI flags
-- Output results with metrics in JSON or CSV format
+- Output results as NDJSON schema v2 records (`record_type`, `schema_version`, `payload`)
 
 ## Installation
 
@@ -35,8 +35,7 @@ make build
 
 The compiled binary will be located in the `bin` directory.
 
-Safnari enables the experimental JSON v2 encoder by default for better throughput. To disable it,
-set `JSONV2=0` when building or testing.
+Safnari enables the experimental JSON v2 encoder by default for better throughput.
 
 Safnari embeds its version at build time. To set the version string, pass a
 `-ldflags` option:
@@ -91,7 +90,7 @@ Run the binary with `-h` to see all available options. By default Safnari scans
 the current working directory using a concurrency level equal to the number of
 logical CPUs. It does not search for any strings or sensitive data types unless
 explicitly requested and writes results to a timestamped file named
-`safnari-<human-readable>-<unix>.json`.
+`safnari-<human-readable>-<unix>.ndjson`.
 
 If only `--exclude-sensitive-data-types` is supplied, Safnari scans all built-in patterns except
 those excluded. When both include and exclude lists are provided, the exclusion list removes types
@@ -109,7 +108,7 @@ Running Safnari without any flags applies these defaults:
 - `--scan-processes`: `true`
 - `--collect-system-info`: `true`
 - `--format`: `json`
-- `--output`: `safnari-<timestamp>-<unix>.json`
+- `--output`: `safnari-<timestamp>-<unix>.ndjson`
 - `--concurrency`: number of logical CPUs (effective value adjusted by `--nice` unless
   `--concurrency` is set)
 - `--nice`: `medium`
@@ -132,7 +131,7 @@ Running Safnari without any flags applies these defaults:
 - `--delta-scan`: `false`
 - `--last-scan-file`: `.safnari_last_scan`
 - `--last-scan`: none
-- `--skip-count`: `false`
+- `--skip-count`: `true`
 - `--redact-sensitive`: `mask` (use `none` to disable)
 - `--collect-xattrs`: `true`
 - `--xattr-max-value-size`: `1024`
@@ -145,6 +144,22 @@ Running Safnari without any flags applies these defaults:
 - `--auto-tune`: `true`
 - `--auto-tune-interval`: `5s`
 - `--auto-tune-target-cpu`: `60`
+- `--auto-tune-runtime-metrics`: `true`
+- `--auto-tune-target-runq`: `1.0`
+- `--auto-tune-target-latency-ms`: `25`
+- `--perf-profile`: `adaptive`
+- `--sensitive-engine`: `auto`
+- `--sensitive-longtail`: `sampled`
+- `--sensitive-window-bytes`: `4096`
+- `--content-read-mode`: `auto`
+- `--stream-chunk-size`: `262144`
+- `--stream-overlap-bytes`: `512`
+- `--mmap-min-size`: `131072`
+- `--json-layout`: `ndjson`
+- `--simd-fastpath`: `false`
+- `--diag-slow-scan-threshold`: `0`
+- `--diag-dir`: `.`
+- `--diag-goroutine-leak`: `false`
 - `--otel-endpoint`: none (enable OTLP/HTTP log export)
 - `--otel-headers`: none
 - `--otel-service-name`: `safnari`
@@ -154,23 +169,31 @@ Running Safnari without any flags applies these defaults:
 - `--trace-flight-max-bytes`: `0`
 - `--trace-flight-min-age`: `0`
 
+Performance and optimization workflows are available through:
+
+```sh
+make bench-ultra
+make bench-gate
+make profile-generate
+make build-pgo-ultra
+make bench-simd
+```
+
 ```sh
 ./bin/safnari-$(go env GOOS)-$(go env GOARCH) --path /home/user --hashes sha256 --search "password"
 ```
 
 This will scan `/home/user`, compute SHA-256 hashes, search for the term
 `password`, and write results to a file such as
-`safnari-20240130-150405-1706625005.json` unless an alternate output filename
+`safnari-20240130-150405-1706625005.ndjson` unless an alternate output filename
 is provided.
 
 Search results are included as a `search_hits` map where each term maps to the number of matches
 found in that file.
 
-When `--format csv` is selected, Safnari writes a single CSV with a `record_type` column. The file
-starts with `system_info` and `process` rows, followed by `file` rows, and finishes with a
-`metrics` row. Complex fields such as hashes, metadata, sensitive data, and search hits are stored
-as JSON-encoded strings in their respective columns. All outputs include a `schema_version` field
-to support forward compatibility.
+Safnari writes NDJSON only. Each line is a record envelope with `record_type`, `schema_version`,
+and `payload`. The schema version is fixed at `2`, with record types `system_info`, `process`,
+`file`, and `metrics`.
 
 Metrics include start/end timestamps, total files discovered, files scanned, files written to the
 output, and total running processes.

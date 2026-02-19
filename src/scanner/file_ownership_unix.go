@@ -9,10 +9,14 @@ import (
 	"syscall"
 )
 
-func getFileOwnership(path string) (string, error) {
-	fileInfo, err := os.Stat(path)
-	if err != nil {
-		return "", err
+func getFileOwnership(path string, info os.FileInfo) (string, error) {
+	fileInfo := info
+	if fileInfo == nil {
+		var err error
+		fileInfo, err = os.Stat(path)
+		if err != nil {
+			return "", err
+		}
 	}
 	stat, ok := fileInfo.Sys().(*syscall.Stat_t)
 	if !ok {
