@@ -291,8 +291,9 @@ func buildMixedCorpus(b *testing.B, root string) {
 
 func buildSensitiveDenseCorpus(b *testing.B, root string) {
 	b.Helper()
+	fixtureJWT := "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.signature" // gitleaks:allow
 	payload := strings.Repeat(
-		"user=test@example.com ssn=123-45-6789 cc=4111-1111-1111-1111 aws=AKIA"+"ABCDEFGHIJKLMNOP jwt=eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.signature\n",
+		"user=test@example.com ssn=123-45-6789 cc=4111-1111-1111-1111 aws=AKIA"+"ABCDEFGHIJKLMNOP jwt="+fixtureJWT+"\n",
 		96,
 	)
 	for d := 0; d < 32; d++ {
@@ -331,8 +332,9 @@ func buildDuplicateLogsCorpus(b *testing.B, root string) {
 	if err := os.MkdirAll(logDir, 0755); err != nil {
 		b.Fatalf("mkdir: %v", err)
 	}
+	fixtureJWT := "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.signature" // gitleaks:allow
 	payload := strings.Repeat(
-		"ALPHA user=test@example.com api_key=abcd1234 ssn=123-45-6789 jwt=eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.signature\n",
+		"ALPHA user=test@example.com api_key=abcd1234 ssn=123-45-6789 jwt="+fixtureJWT+"\n",
 		8192,
 	)
 	for i := 0; i < 10; i++ {
