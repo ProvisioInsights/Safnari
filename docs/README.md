@@ -83,6 +83,11 @@ before/after `benchstat` comparison for performance-focused changes. Supplying
 both `BASELINE` and `CANDIDATE` to `make bench-gate` enables artifact-compare
 mode for threshold enforcement against a known baseline.
 
+In CI, pull requests run the lighter `benchmark-pr` job, which still executes
+`make bench-gate` but treats the result as informational and uploads the
+artifact directory plus summary output for review. Non-PR runs keep the stricter
+benchmark enforcement path in `benchmark-matrix`.
+
 Run periodic escape-analysis snapshots when tuning allocations:
 
 ```sh
@@ -229,9 +234,24 @@ See `./bin/safnari --help` for detailed usage information.
 
 ## OTEL Export
 
-When `--otel-endpoint` is set (or OTEL environment variables are present), Safnari exports
-records over OTLP/HTTP Logs. The exported log body contains the same fields as the local JSON
-records, and each log includes `record_type` and `schema_version` attributes for reconstruction.
+When `--otel-endpoint` is set (or OTEL environment variables are present),
+Safnari exports records over OTLP/HTTP Logs. The exported log body contains the
+same fields as the local JSON records, and each log includes `record_type` and
+`schema_version` attributes for reconstruction.
+
+## CI And Release Security
+
+GitHub Actions now runs multiple repo-level checks:
+
+- `govulncheck` in the test workflow for Go dependency and standard library advisories.
+- Gitleaks for secret scanning, with SARIF uploaded to GitHub code scanning.
+- Trivy filesystem scanning for high and critical vulnerabilities and
+  misconfigurations.
+- CodeQL analysis for workflow and Go code scanning.
+
+Push and release workflows also generate SPDX SBOMs with Syft for both the
+source tree and compiled binaries. Those SBOM artifacts are uploaded in CI and
+published with generated releases.
 
 ## Capability Matrix
 

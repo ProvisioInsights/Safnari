@@ -48,6 +48,14 @@ All p50 durations below use ultra-profile medians. Lower is better. The
 before/after table reflects the last full artifact comparison before the final
 duplicate-log and delta regression pass landed.
 
+Current CI behavior is intentionally split:
+
+- pull requests run `benchmark-pr`, which captures the same benchmark artifacts
+  and a gate summary but treats the current threshold miss set as
+  informational;
+- pushes to `main` and tags keep strict non-PR benchmark enforcement in
+  `benchmark-matrix`.
+
 ## Before And After
 
 | Benchmark | Before p50 (ms) | After p50 (ms) | Delta |
@@ -92,6 +100,12 @@ Those focused reruns show:
   Small changed files that still require authoritative full-file hashes now
   bypass chunk-cache bookkeeping automatically, so chunk mode falls back toward
   mtime-like resource use when the cache is unlikely to pay back.
+
+The duplicate-log and sensitive-dense benchmark corpora intentionally contain
+fixture tokens that look like JWTs and other secrets so the scanner exercises
+its sensitive-data paths under load. The benchmark source marks those literals
+with `gitleaks:allow` comments so repository secret scanning can stay strict
+without treating the synthetic fixtures as real leaks.
 
 ## Memory And Microbenchmarks
 
@@ -159,3 +173,7 @@ It currently fails:
 - sensitive adaptive speedup,
 - `BenchmarkCollectFileData` allocation reduction,
 - delta chunk-versus-mtime speedup.
+
+That means the strict gate remains useful for non-PR benchmark enforcement and
+release tracking, but the pull-request benchmark job currently serves as a
+reporting lane until those thresholds are brought fully back into line.

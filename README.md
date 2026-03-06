@@ -197,6 +197,10 @@ two artifact directories to generate a `benchstat` before/after report. When
 both `BASELINE` and `CANDIDATE` are supplied, `make bench-gate` switches into
 artifact-compare mode and enforces the before/after thresholds.
 
+In GitHub Actions, pull requests run the lighter `benchmark-pr` workflow and
+upload benchmark artifacts plus a gate summary for review. Pushes to `main` and
+tags keep the stricter non-PR benchmark enforcement path.
+
 ```sh
 ./bin/safnari-$(go env GOOS)-$(go env GOARCH) --path /home/user --hashes sha256 --search "password"
 ```
@@ -226,11 +230,25 @@ release checks unless `--check-updates` is enabled.
 
 ### OTEL Export
 
-When `--otel-endpoint` is set (or OTEL environment variables are present), Safnari exports records over OTLP/HTTP Logs. The exported log body contains the same fields as the local JSON records, and each log includes `record_type` and `schema_version` attributes for reconstruction.
+When `--otel-endpoint` is set (or OTEL environment variables are present),
+Safnari exports records over OTLP/HTTP Logs. The exported log body contains the
+same fields as the local JSON records, and each log includes `record_type` and
+`schema_version` attributes for reconstruction.
 
 ## Security Posture (Brief)
 
-Safnari is a local CLI with no server listener. The primary security risks are the sensitivity of scan outputs and the integrity of any future telemetry exports. Output files are created with `0600` permissions by default, sensitive matches are masked unless explicitly disabled, and Safnari skips its own output, delta-scan, trace, and diagnostics artifacts while walking target paths. For managed fleet or OTEL deployments, prefer authenticated and encrypted export channels with data-minimization defaults (hashes/locators over raw values).
+Safnari is a local CLI with no server listener. The primary security risks are
+the sensitivity of scan outputs and the integrity of any future telemetry
+exports. Output files are created with `0600` permissions by default, sensitive
+matches are masked unless explicitly disabled, and Safnari skips its own
+output, delta-scan, trace, and diagnostics artifacts while walking target
+paths. For managed fleet or OTEL deployments, prefer authenticated and
+encrypted export channels with data-minimization defaults (hashes/locators over
+raw values).
+
+CI now layers `govulncheck`, CodeQL, Gitleaks, and Trivy on pull requests and
+pushes. Release automation also generates SPDX SBOMs for both the source tree
+and compiled binaries and publishes them with release artifacts.
 
 ## Capability Matrix
 
