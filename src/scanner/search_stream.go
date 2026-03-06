@@ -6,14 +6,6 @@ import (
 	"strings"
 )
 
-type streamTermCounter struct {
-	term    string
-	pattern []byte
-	prefix  []int
-	matched int
-	count   int
-}
-
 func countSearchTermsStream(path string, terms []string, chunkSize int, maxSize int64) (map[string]int, error) {
 	normalized := normalizeSearchTerms(terms)
 	if len(normalized) == 0 {
@@ -30,21 +22,7 @@ func countSearchTermsStream(path string, terms []string, chunkSize int, maxSize 
 	}
 	defer file.Close()
 
-	counters := make([]streamTermCounter, 0, len(normalized))
-	for _, term := range normalized {
-		pattern := []byte(term)
-		if len(pattern) == 0 {
-			continue
-		}
-		counters = append(counters, streamTermCounter{
-			term:    term,
-			pattern: pattern,
-			prefix:  buildKMPPrefix(pattern),
-		})
-	}
-	if len(counters) == 0 {
-		return nil, nil
-	}
+	counter := newStreamAhoCounter(normalized)
 
 	buffer := make([]byte, chunkSize)
 	var consumed int64
@@ -60,22 +38,7 @@ func countSearchTermsStream(path string, terms []string, chunkSize int, maxSize 
 				chunk = chunk[:allowed]
 				readErr = io.EOF
 			}
-			for _, b := range chunk {
-				for i := range counters {
-					c := &counters[i]
-					for c.matched > 0 && b != c.pattern[c.matched] {
-						c.matched = c.prefix[c.matched-1]
-					}
-					if b == c.pattern[c.matched] {
-						c.matched++
-					}
-					if c.matched == len(c.pattern) {
-						c.count++
-						// bytes.Count semantics are non-overlapping.
-						c.matched = 0
-					}
-				}
-			}
+			counter.Consume(chunk)
 			consumed += int64(len(chunk))
 		}
 		if readErr != nil {
@@ -86,32 +49,7 @@ func countSearchTermsStream(path string, terms []string, chunkSize int, maxSize 
 		}
 	}
 
-	var hits map[string]int
-	for _, c := range counters {
-		if c.count <= 0 {
-			continue
-		}
-		if hits == nil {
-			hits = make(map[string]int, len(counters))
-		}
-		hits[c.term] = c.count
-	}
-	return hits, nil
-}
-
-func buildKMPPrefix(pattern []byte) []int {
-	prefix := make([]int, len(pattern))
-	var j int
-	for i := 1; i < len(pattern); i++ {
-		for j > 0 && pattern[i] != pattern[j] {
-			j = prefix[j-1]
-		}
-		if pattern[i] == pattern[j] {
-			j++
-		}
-		prefix[i] = j
-	}
-	return prefix
+	return counter.Results(), nil
 }
 
 func normalizeSearchTerms(terms []string) []string {

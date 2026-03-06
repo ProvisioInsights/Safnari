@@ -11,7 +11,6 @@ import (
 
 	"safnari/config"
 	"safnari/fuzzy"
-	"safnari/hasher"
 	"safnari/logger"
 	"safnari/metadata"
 	"safnari/scanner/prefilter"
@@ -30,6 +29,9 @@ type FileContext struct {
 	Info              os.FileInfo
 	Cfg               *config.Config
 	SensitivePatterns map[string]*regexp.Regexp
+	deltaCache        *DeltaChunkCache
+
+	source *ChunkSource
 
 	mimeLoaded  bool
 	mimeType    string
@@ -37,6 +39,10 @@ type FileContext struct {
 	contentText string
 	contentErr  error
 	textLoaded  bool
+
+	analysisLoaded bool
+	analysisErr    error
+	analysis       *contentAnalysisResults
 
 	contentScanBytes     int64
 	contentScanTruncated bool
@@ -49,11 +55,13 @@ func (fc *FileContext) MimeType() string {
 	if fc.mimeLoaded {
 		return fc.mimeType
 	}
-	mimeType, err := getMimeType(fc.Path)
-	if err != nil || mimeType == "" {
-		mimeType = "unknown"
+	source, err := fc.Source()
+	if err != nil {
+		fc.mimeType = "unknown"
+		fc.mimeLoaded = true
+		return fc.mimeType
 	}
-	fc.mimeType = mimeType
+	fc.mimeType = source.MimeType()
 	fc.mimeLoaded = true
 	return fc.mimeType
 }
@@ -63,14 +71,12 @@ func (fc *FileContext) ContentBytes() ([]byte, error) {
 		return fc.content, fc.contentErr
 	}
 	maxSize := fc.contentScanLimit()
-	content, err := readFileContentWithMode(
-		fc.Path,
-		maxSize,
-		fc.Cfg.ContentReadMode,
-		fc.Cfg.MmapMinSize,
-		fc.Cfg.StreamChunkSize,
-		fc.Cfg.StreamOverlapBytes,
-	)
+	source, err := fc.Source()
+	if err != nil {
+		fc.contentErr = err
+		return nil, err
+	}
+	content, err := source.ReadAll(maxSize)
 	fc.content = content
 	fc.contentErr = err
 	if err == nil {
@@ -93,10 +99,14 @@ func (fc *FileContext) ContentText() (string, error) {
 }
 
 func (fc *FileContext) ShouldSearchContent() bool {
-	if hasLikelyTextExtension(fc.Path) {
-		return true
+	source, err := fc.Source()
+	if err != nil {
+		if hasLikelyTextExtension(fc.Path) {
+			return true
+		}
+		return false
 	}
-	return shouldSearchContent(fc.MimeType(), fc.Path)
+	return source.ShouldSearchContent()
 }
 
 func (fc *FileContext) FullFileProcessingAllowed() bool {
@@ -168,6 +178,48 @@ func (fc *FileContext) addWarning(msg string) {
 	}
 	fc.warningSet[msg] = struct{}{}
 	fc.warnings = append(fc.warnings, msg)
+}
+
+func (fc *FileContext) Source() (*ChunkSource, error) {
+	if fc == nil {
+		return nil, fmt.Errorf("file context is nil")
+	}
+	if fc.source != nil {
+		return fc.source, nil
+	}
+	source, err := openChunkSource(fc.Path, fc.Info, fc.Cfg)
+	if err != nil {
+		return nil, err
+	}
+	fc.source = source
+	return source, nil
+}
+
+func (fc *FileContext) Close() error {
+	if fc == nil || fc.source == nil {
+		return nil
+	}
+	err := fc.source.Close()
+	fc.source = nil
+	return err
+}
+
+func (fc *FileContext) EnsureContentAnalysis() (*contentAnalysisResults, error) {
+	if fc == nil {
+		return &contentAnalysisResults{}, nil
+	}
+	if fc.analysisLoaded || fc.analysisErr != nil {
+		if fc.analysis == nil {
+			fc.analysis = &contentAnalysisResults{}
+		}
+		return fc.analysis, fc.analysisErr
+	}
+	fc.analysisLoaded = true
+	fc.analysis, fc.analysisErr = runContentPipeline(fc)
+	if fc.analysis == nil {
+		fc.analysis = &contentAnalysisResults{}
+	}
+	return fc.analysis, fc.analysisErr
 }
 
 func buildFileModules(cfg *config.Config, patterns map[string]*regexp.Regexp) []FileModule {
@@ -295,8 +347,11 @@ func (m hashModule) Collect(ctx context.Context, fc *FileContext, data *FileReco
 		fc.NoteFullFileProcessingSkipped()
 		return nil
 	}
-	hashes := hasher.ComputeHashes(fc.Path, fc.Cfg.HashAlgorithms)
-	data.Hashes = hashes
+	results, err := fc.EnsureContentAnalysis()
+	if err != nil {
+		return err
+	}
+	data.Hashes = results.hashes
 	return nil
 }
 
@@ -311,7 +366,16 @@ func (m metadataModule) Collect(ctx context.Context, fc *FileContext, data *File
 		fc.NoteFullFileProcessingSkipped()
 		return nil
 	}
-	meta := metadata.ExtractMetadata(fc.Path, fc.MimeType(), fc.Cfg.MetadataMaxBytes)
+	source, err := fc.Source()
+	if err != nil {
+		return err
+	}
+	file := source.File()
+	size := int64(0)
+	if fc.Info != nil {
+		size = fc.Info.Size()
+	}
+	meta := metadata.ExtractMetadataFromFile(file, size, fc.MimeType(), fc.Path, fc.Cfg.MetadataMaxBytes)
 	data.Metadata = meta
 	return nil
 }
@@ -339,19 +403,12 @@ func (m fuzzyModule) Collect(ctx context.Context, fc *FileContext, data *FileRec
 	if fc.Cfg.FuzzyMaxSize > 0 && size > fc.Cfg.FuzzyMaxSize {
 		return nil
 	}
-	results := make(map[string]string)
-	for _, hasher := range m.hashers {
-		hash, err := hasher.HashFile(fc.Path)
-		if err != nil {
-			logger.Debugf("Fuzzy hash %s failed for %s: %v", hasher.Name(), fc.Path, err)
-			continue
-		}
-		if hash != "" {
-			results[hasher.Name()] = hash
-		}
+	results, err := fc.EnsureContentAnalysis()
+	if err != nil {
+		return err
 	}
-	if len(results) > 0 {
-		data.FuzzyHashes = results
+	if len(results.fuzzyHashes) > 0 {
+		data.FuzzyHashes = results.fuzzyHashes
 	}
 	return nil
 }
@@ -368,55 +425,20 @@ func (m sensitiveModule) Collect(ctx context.Context, fc *FileContext, data *Fil
 	if !fc.ShouldSearchContent() || len(fc.SensitivePatterns) == 0 {
 		return nil
 	}
-	criticalPatterns := filterCriticalPatternNames(m.patternNames, fc.SensitivePatterns)
-	var (
-		matches map[string][]string
-		counts  map[string]int
-		err     error
-	)
-	if shouldUseDeterministicStreamSensitiveScan(
-		fc.Cfg.ContentReadMode,
-		fc.Cfg.SensitiveEngine,
-		fc.Cfg.SensitiveLongtail,
-		criticalPatterns,
-		len(fc.Cfg.SearchTerms) > 0,
-	) {
-		maxSize := fc.contentScanLimit()
-		matches, counts, err = scanSensitiveDataDeterministicStream(
-			fc.Path,
-			fc.SensitivePatterns,
-			criticalPatterns,
-			fc.Cfg.SensitiveMaxPerType,
-			fc.Cfg.SensitiveMaxTotal,
-			fc.Cfg.StreamChunkSize,
-			fc.Cfg.StreamOverlapBytes,
-			maxSize,
-		)
-		if err != nil {
-			return err
-		}
-		fc.markContentScan(maxSize)
-	} else {
-		content, err := fc.ContentBytes()
-		if err != nil {
-			return err
-		}
-		matches, counts = scanForSensitiveDataAdvanced(
-			content,
-			fc.SensitivePatterns,
-			fc.Cfg.SensitiveMaxPerType,
-			fc.Cfg.SensitiveMaxTotal,
-			fc.Cfg.SensitiveEngine,
-			fc.Cfg.SensitiveLongtail,
-			fc.Cfg.SensitiveWindowBytes,
-			m.patternNames,
-		)
+	results, err := fc.EnsureContentAnalysis()
+	if err != nil {
+		return err
 	}
+	matches := results.sensitiveMatches
+	counts := results.sensitiveMatchCount
 	if len(matches) > 0 {
 		matches = redactSensitiveData(matches, fc.Cfg.RedactSensitive)
 		data.SensitiveData = matches
 		data.SensitiveDataMatchCounts = counts
-		if sensitiveMatchesMayBeTruncated(counts, fc.Cfg.SensitiveMaxPerType, fc.Cfg.SensitiveMaxTotal) {
+		if sensitiveMatchMode(fc.Cfg) == "first" {
+			fc.addWarning("sensitive-match-mode=first stores only the first retained match for each matching type")
+		}
+		if sensitiveMatchesMayBeTruncated(counts, effectiveSensitivePerTypeLimit(fc.Cfg), fc.Cfg.SensitiveMaxTotal) || sensitiveMatchMode(fc.Cfg) == "first" {
 			data.SensitiveDataTruncated = true
 		}
 	}
@@ -435,30 +457,12 @@ func (m searchModule) Collect(ctx context.Context, fc *FileContext, data *FileRe
 	if !fc.ShouldSearchContent() {
 		return nil
 	}
-	counter := m.counter
-	if counter == nil {
-		counter = prefilter.BuildSearchCounter(fc.Cfg.SearchTerms)
+	results, err := fc.EnsureContentAnalysis()
+	if err != nil {
+		return err
 	}
-	var (
-		hits map[string]int
-		err  error
-	)
-	if shouldUseStreamSearchCounter(fc.Cfg.ContentReadMode, fc.content != nil, len(fc.Cfg.SearchTerms)) {
-		maxSize := fc.contentScanLimit()
-		hits, err = countSearchTermsStream(fc.Path, fc.Cfg.SearchTerms, fc.Cfg.StreamChunkSize, maxSize)
-		if err != nil {
-			return err
-		}
-		fc.markContentScan(maxSize)
-	} else {
-		content, readErr := fc.ContentBytes()
-		if readErr != nil {
-			return readErr
-		}
-		hits = counter.CountBytes(content)
-	}
-	if len(hits) > 0 {
-		data.SearchHits = hits
+	if len(results.searchHits) > 0 {
+		data.SearchHits = results.searchHits
 	}
 	return nil
 }

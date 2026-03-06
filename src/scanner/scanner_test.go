@@ -207,7 +207,7 @@ func TestCollectFileData(t *testing.T) {
 	fi, _ := os.Stat(tmp.Name())
 	cfg := &config.Config{HashAlgorithms: []string{"md5"}, MaxFileSize: 1024, ScanFiles: true, ScanSensitive: true}
 	patterns := GetPatterns([]string{"email"}, nil, nil)
-	data, err := collectFileData(context.Background(), tmp.Name(), fi, cfg, patterns, buildFileModules(cfg, patterns))
+	data, err := collectFileData(context.Background(), tmp.Name(), fi, cfg, patterns, buildFileModules(cfg, patterns), nil)
 	if err != nil {
 		t.Fatalf("collect: %v", err)
 	}
@@ -216,6 +216,40 @@ func TestCollectFileData(t *testing.T) {
 	}
 	if _, ok := data.Hashes["md5"]; !ok {
 		t.Fatalf("hash missing")
+	}
+}
+
+func TestCollectFileDataSensitiveFirstMatchMode(t *testing.T) {
+	tmp, _ := os.CreateTemp("", "collect-sensitive-first*.txt")
+	tmp.WriteString(strings.Repeat("test@example.com api_key=abcd1234\n", 8))
+	tmp.Close()
+	defer os.Remove(tmp.Name())
+
+	fi, _ := os.Stat(tmp.Name())
+	cfg := &config.Config{
+		ScanFiles:          true,
+		ScanSensitive:      true,
+		SensitiveMatchMode: "first",
+	}
+	patterns := GetPatterns([]string{"email", "api_key"}, nil, nil)
+	data, err := collectFileData(context.Background(), tmp.Name(), fi, cfg, patterns, buildFileModules(cfg, patterns), nil)
+	if err != nil {
+		t.Fatalf("collect: %v", err)
+	}
+	if got := len(data.SensitiveData["email"]); got != 1 {
+		t.Fatalf("expected one retained email match, got %d", got)
+	}
+	if got := len(data.SensitiveData["api_key"]); got != 1 {
+		t.Fatalf("expected one retained api_key match, got %d", got)
+	}
+	if data.SensitiveDataMatchCounts["email"] != 1 || data.SensitiveDataMatchCounts["api_key"] != 1 {
+		t.Fatalf("expected first-match counts to be capped at 1, got %v", data.SensitiveDataMatchCounts)
+	}
+	if !data.SensitiveDataTruncated {
+		t.Fatal("expected first-match mode to mark sensitive output as truncated")
+	}
+	if len(data.CollectionWarnings) == 0 {
+		t.Fatal("expected first-match mode warning to be recorded")
 	}
 }
 
@@ -233,7 +267,7 @@ func TestCollectFileDataLargeFileStillInventoried(t *testing.T) {
 		ScanFiles:      true,
 		ScanSensitive:  false,
 	}
-	data, err := collectFileData(context.Background(), tmp.Name(), fi, cfg, nil, buildFileModules(cfg, nil))
+	data, err := collectFileData(context.Background(), tmp.Name(), fi, cfg, nil, buildFileModules(cfg, nil), nil)
 	if err != nil {
 		t.Fatalf("collect: %v", err)
 	}
@@ -264,7 +298,7 @@ func TestCollectFileDataMarksContentTruncation(t *testing.T) {
 		ContentReadMode:     "stream",
 		StreamChunkSize:     4,
 	}
-	data, err := collectFileData(context.Background(), tmp.Name(), fi, cfg, nil, buildFileModules(cfg, nil))
+	data, err := collectFileData(context.Background(), tmp.Name(), fi, cfg, nil, buildFileModules(cfg, nil), nil)
 	if err != nil {
 		t.Fatalf("collect: %v", err)
 	}

@@ -113,6 +113,13 @@ func ScanFiles(ctx context.Context, cfg *config.Config, metrics *output.Metrics,
 	// Prepare sensitive data patterns
 	sensitivePatterns := GetPatterns(cfg.IncludeDataTypes, cfg.CustomPatterns, cfg.ExcludeDataTypes)
 	fileModules := buildFileModules(cfg, sensitivePatterns)
+	deltaCache, err := openDeltaChunkCache(cfg)
+	if err != nil {
+		return err
+	}
+	if deltaCache != nil {
+		defer deltaCache.Close()
+	}
 
 	// Implement I/O rate limiter
 	var ioLimiter *rate.Limiter
@@ -130,6 +137,7 @@ func ScanFiles(ctx context.Context, cfg *config.Config, metrics *output.Metrics,
 	}
 
 	filesChan := make(chan fileScanTask, cfg.ConcurrencyLevel)
+	scheduler := newSizeLaneScheduler(maxInt(cfg.ConcurrencyLevel*8, 64))
 	var processedCounter atomic.Int64
 	if cfg.AutoTune {
 		startAutoTuneLoop(
@@ -139,10 +147,10 @@ func ScanFiles(ctx context.Context, cfg *config.Config, metrics *output.Metrics,
 			tuneState,
 			autoTuneTelemetry{
 				queueDepthFn: func() int {
-					return len(filesChan)
+					return scheduler.Depth()
 				},
 				queueCapacityFn: func() int {
-					return cap(filesChan)
+					return scheduler.Capacity()
 				},
 				processedCountFn: func() int64 {
 					return processedCounter.Load()
@@ -152,10 +160,11 @@ func ScanFiles(ctx context.Context, cfg *config.Config, metrics *output.Metrics,
 	}
 
 	selectedWalker := selectWalker(cfg)
+	go scheduler.Run(ctx, filesChan)
 
 	// Start the file walking in a separate goroutine
 	go func() {
-		defer close(filesChan)
+		defer scheduler.Close()
 		for _, startPath := range cfg.StartPaths {
 			err := selectedWalker.Walk(ctx, startPath, func(path string, d fs.DirEntry, err error) error {
 				if err != nil {
@@ -180,15 +189,13 @@ func ScanFiles(ctx context.Context, cfg *config.Config, metrics *output.Metrics,
 							return nil
 						}
 					}
-					select {
-					case <-ctx.Done():
-						return ctx.Err()
-					case filesChan <- fileScanTask{path: path, info: info}:
-						// Wait for permission from the limiter
-						if ioLimiter != nil {
-							if err := ioLimiter.Wait(ctx); err != nil {
-								return err
-							}
+					if err := scheduler.Enqueue(ctx, fileScanTask{path: path, info: info}, cfg); err != nil {
+						return err
+					}
+					// Wait for permission from the limiter
+					if ioLimiter != nil {
+						if err := ioLimiter.Wait(ctx); err != nil {
+							return err
 						}
 					}
 				}
@@ -224,7 +231,7 @@ func ScanFiles(ctx context.Context, cfg *config.Config, metrics *output.Metrics,
 				default:
 					// Continue processing
 				}
-				if err := processFile(ctx, task.path, task.info, cfg, w, sensitivePatterns, fileModules, true); err != nil {
+				if err := processFile(ctx, task.path, task.info, cfg, w, sensitivePatterns, fileModules, deltaCache, true); err != nil {
 					setScanError(err)
 					return
 				}

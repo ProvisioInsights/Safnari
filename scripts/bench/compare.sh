@@ -11,12 +11,16 @@ CANDIDATE="$2"
 OUT_FILE="${3:-}"
 
 if [[ ! -f "$BASELINE" ]]; then
-  echo "baseline file not found: $BASELINE" >&2
-  exit 1
+  if [[ ! -d "$BASELINE" ]]; then
+    echo "baseline file or directory not found: $BASELINE" >&2
+    exit 1
+  fi
 fi
 if [[ ! -f "$CANDIDATE" ]]; then
-  echo "candidate file not found: $CANDIDATE" >&2
-  exit 1
+  if [[ ! -d "$CANDIDATE" ]]; then
+    echo "candidate file or directory not found: $CANDIDATE" >&2
+    exit 1
+  fi
 fi
 
 if ! command -v benchstat >/dev/null 2>&1; then
@@ -30,9 +34,20 @@ if [[ ! -x "$BENCHSTAT_BIN" ]]; then
 fi
 
 if [[ -n "$OUT_FILE" ]]; then
-  "$BENCHSTAT_BIN" "$BASELINE" "$CANDIDATE" | tee "$OUT_FILE"
+  if [[ -d "$BASELINE" || -d "$CANDIDATE" ]]; then
+    mapfile -t baseline_inputs < <(find "$BASELINE" -maxdepth 1 -type f -name '*.txt' | sort)
+    mapfile -t candidate_inputs < <(find "$CANDIDATE" -maxdepth 1 -type f -name '*.txt' | sort)
+    "$BENCHSTAT_BIN" "${baseline_inputs[@]}" "${candidate_inputs[@]}" | tee "$OUT_FILE"
+  else
+    "$BENCHSTAT_BIN" "$BASELINE" "$CANDIDATE" | tee "$OUT_FILE"
+  fi
   echo "[bench-compare] wrote comparison to $OUT_FILE"
 else
-  "$BENCHSTAT_BIN" "$BASELINE" "$CANDIDATE"
+  if [[ -d "$BASELINE" || -d "$CANDIDATE" ]]; then
+    mapfile -t baseline_inputs < <(find "$BASELINE" -maxdepth 1 -type f -name '*.txt' | sort)
+    mapfile -t candidate_inputs < <(find "$CANDIDATE" -maxdepth 1 -type f -name '*.txt' | sort)
+    "$BENCHSTAT_BIN" "${baseline_inputs[@]}" "${candidate_inputs[@]}"
+  else
+    "$BENCHSTAT_BIN" "$BASELINE" "$CANDIDATE"
+  fi
 fi
-

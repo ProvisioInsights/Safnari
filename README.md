@@ -96,7 +96,9 @@ disabled unless explicitly requested. Results are written to a timestamped file 
 If only `--exclude-sensitive-data-types` is supplied, Safnari scans all built-in patterns except
 those excluded. When both include and exclude lists are provided, the exclusion list removes types
 from the inclusion list. Custom regex patterns can be added with `--custom-patterns` using a JSON
-object mapping names to regexes.
+object mapping names to regexes. Use `--sensitive-match-mode first` to retain only the first match
+per sensitive type in each file; those records are marked with `sensitive_data_truncated` and a
+collection warning so presence-only scans are explicit.
 
 ### Default flags
 
@@ -132,9 +134,13 @@ Running Safnari without any flags applies these defaults:
 - `--fuzzy-min-size`: `256`
 - `--fuzzy-max-size`: `20971520`
 - `--delta-scan`: `false`
+- `--delta-cache-mode`: `chunk`
+- `--delta-cache-dir`: `${os.UserCacheDir()}/safnari/delta-cache`
+- `--delta-cache-max-bytes`: `1073741824`
 - `--last-scan-file`: `.safnari_last_scan`
 - `--last-scan`: none
 - `--skip-count`: `true`
+- `--sensitive-match-mode`: `all`
 - `--redact-sensitive`: `mask` (use `none` to disable)
 - `--collect-xattrs`: `true`
 - `--xattr-max-value-size`: `1024`
@@ -177,10 +183,19 @@ Performance and optimization workflows are available through:
 ```sh
 make bench-ultra
 make bench-gate
+make bench-gate BASELINE=artifacts/bench/<before-dir> CANDIDATE=artifacts/bench/<after-dir>
+make bench-compare BASELINE=artifacts/bench/<before-dir> CANDIDATE=artifacts/bench/<after-dir>
 make profile-generate
 make build-pgo-ultra
 make bench-simd
 ```
+
+`make bench-ultra` now captures synthetic, small-files, mixed, mixed-heavy-tail,
+sensitive-dense, duplicate-log, and delta second-run samples into a timestamped
+artifact directory under `artifacts/bench/`. Use `make bench-compare` against
+two artifact directories to generate a `benchstat` before/after report. When
+both `BASELINE` and `CANDIDATE` are supplied, `make bench-gate` switches into
+artifact-compare mode and enforces the before/after thresholds.
 
 ```sh
 ./bin/safnari-$(go env GOOS)-$(go env GOARCH) --path /home/user --hashes sha256 --search "password"
@@ -194,6 +209,10 @@ is provided.
 Search results are included as a `search_hits` map where each term maps to the number of matches
 found in that file. When content inspection is capped by `--content-scan-max-bytes`, file records
 also include `content_scan_bytes`, `content_scan_truncated`, and `collection_warnings`.
+
+Delta scans default to `--delta-cache-mode chunk`, but Safnari automatically falls back to the
+plain streaming path for small changed files that still require full-file evidence hashes. That
+avoids paying chunk-cache bookkeeping when it is unlikely to win back time.
 
 Safnari writes NDJSON only. Each line is a record envelope with `record_type`, `schema_version`,
 and `payload`. The schema version is fixed at `2`, with record types `system_info`, `process`,
@@ -241,6 +260,8 @@ The table below summarizes what Safnari collects by default across platforms. Op
 ## Documentation
 
 See the [docs](docs/README.md) directory for extended guides and additional examples.
+The performance workflow, corpus definitions, and before/after reporting format
+are documented in [docs/performance-architecture.md](docs/performance-architecture.md).
 
 ## Development
 

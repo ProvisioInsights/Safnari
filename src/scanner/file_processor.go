@@ -24,7 +24,7 @@ import (
 )
 
 func ProcessFile(ctx context.Context, path string, cfg *config.Config, w *output.Writer, sensitivePatterns map[string]*regexp.Regexp) error {
-	return processFile(ctx, path, nil, cfg, w, sensitivePatterns, nil, true)
+	return processFile(ctx, path, nil, cfg, w, sensitivePatterns, nil, nil, true)
 }
 
 func processFile(
@@ -35,6 +35,7 @@ func processFile(
 	w *output.Writer,
 	sensitivePatterns map[string]*regexp.Regexp,
 	modules []FileModule,
+	deltaCache *DeltaChunkCache,
 	enforcePathWithin bool,
 ) error {
 	ctx, endTask := tracing.StartTask(ctx, "process_file")
@@ -67,7 +68,7 @@ func processFile(
 	w.IncrementScanned()
 
 	endRegion := tracing.StartRegion(ctx, "collect_file_data")
-	fileData, err := collectFileData(ctx, path, fileInfo, cfg, sensitivePatterns, modules)
+	fileData, err := collectFileData(ctx, path, fileInfo, cfg, sensitivePatterns, modules, deltaCache)
 	endRegion()
 	if err != nil {
 		if errors.Is(err, context.Canceled) {
@@ -91,6 +92,7 @@ func collectFileData(
 	cfg *config.Config,
 	sensitivePatterns map[string]*regexp.Regexp,
 	modules []FileModule,
+	deltaCache *DeltaChunkCache,
 ) (*FileRecord, error) {
 	data := &FileRecord{Path: path}
 
@@ -99,7 +101,11 @@ func collectFileData(
 		Info:              fileInfo,
 		Cfg:               cfg,
 		SensitivePatterns: sensitivePatterns,
+		deltaCache:        deltaCache,
 	}
+	defer func() {
+		_ = fc.Close()
+	}()
 	if len(modules) == 0 {
 		modules = buildFileModules(cfg, sensitivePatterns)
 	}
@@ -166,7 +172,11 @@ func getMimeType(path string) (string, error) {
 		return "", err
 	}
 
-	kind, err := filetype.Match(buf)
+	return detectMimeTypeFromSample(buf)
+}
+
+func detectMimeTypeFromSample(sample []byte) (string, error) {
+	kind, err := filetype.Match(sample)
 	if err != nil {
 		return "", err
 	}
@@ -177,6 +187,10 @@ func getMimeType(path string) (string, error) {
 }
 
 func shouldSearchContent(mimeType, path string) bool {
+	return shouldSearchContentWithSample(mimeType, path, nil)
+}
+
+func shouldSearchContentWithSample(mimeType, path string, sample []byte) bool {
 	if hasLikelyTextExtension(path) {
 		return true
 	}
@@ -188,6 +202,9 @@ func shouldSearchContent(mimeType, path string) bool {
 		return true
 	}
 	if mimeType == "unknown" || mimeType == "application/octet-stream" {
+		if len(sample) > 0 {
+			return looksLikeText(sample)
+		}
 		return isLikelyText(path)
 	}
 	return false

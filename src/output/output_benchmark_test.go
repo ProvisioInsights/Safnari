@@ -1,6 +1,12 @@
 package output
 
-import "testing"
+import (
+	"os"
+	"testing"
+
+	"safnari/config"
+	"safnari/systeminfo"
+)
 
 func BenchmarkMarshalFileData(b *testing.B) {
 	data := map[string]interface{}{
@@ -30,5 +36,35 @@ func BenchmarkMarshalFileData(b *testing.B) {
 		if _, err := jsonMarshalIndent(data, "    ", "  "); err != nil {
 			b.Fatal(err)
 		}
+	}
+}
+
+func BenchmarkWriterQueue(b *testing.B) {
+	tmp, err := os.CreateTemp("", "writer-queue-*.ndjson")
+	if err != nil {
+		b.Fatal(err)
+	}
+	defer os.Remove(tmp.Name())
+
+	cfg := &config.Config{OutputFileName: tmp.Name(), OutputFormat: "json"}
+	writer, err := New(cfg, &systeminfo.SystemInfo{RunningProcesses: []systeminfo.ProcessInfo{}}, &Metrics{})
+	if err != nil {
+		b.Fatal(err)
+	}
+	defer writer.Close()
+
+	payload := map[string]interface{}{
+		"path": "/tmp/example.txt",
+		"data": "ALPHA test@example.com api_key=abcd1234",
+	}
+
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		if err := writer.WriteData(payload); err != nil {
+			b.Fatal(err)
+		}
+	}
+	if err := writer.Close(); err != nil {
+		b.Fatal(err)
 	}
 }

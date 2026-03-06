@@ -25,87 +25,79 @@ func ScanDeterministicAll(
 	return out, counts
 }
 
-func ScanDeterministicMatches(
+func ScanDeterministicVisit(
 	content []byte,
 	patternNames []string,
-	maxPerType, maxTotal int,
-) []Match {
+	want func(pattern string) bool,
+	visit func(pattern string, start, end int) bool,
+) {
 	if len(content) == 0 || len(patternNames) == 0 {
-		return nil
+		return
 	}
 
 	enabled := enabledCriticalPatterns(patternNames)
 	if !enabled.any() {
-		return nil
+		return
 	}
 
-	perTypeLimited := maxPerType > 0
-	totalLimited := maxTotal > 0
-	perTypeCounts := make(map[string]int, len(patternNames))
-	apiKeySeen := make(map[string]struct{}, 8)
-	matches := make([]Match, 0, 16)
+	useWant := want != nil
+	if visit == nil {
+		visit = func(string, int, int) bool { return true }
+	}
 
-	add := func(pattern string, start, end int) bool {
-		if start < 0 || end <= start || end > len(content) {
-			return false
+	apiKeySeen := make(map[string]struct{}, 8)
+	emit := func(pattern string, start, end int) bool {
+		if start < 0 || end <= start || end > len(content) || (useWant && !want(pattern)) {
+			return true
 		}
-		if perTypeLimited && perTypeCounts[pattern] >= maxPerType {
-			return false
-		}
-		if totalLimited && len(matches) >= maxTotal {
-			return false
-		}
-		value := string(content[start:end])
 		if pattern == "api_key" {
+			value := string(content[start:end])
 			if _, exists := apiKeySeen[value]; exists {
-				return false
+				return true
 			}
 			apiKeySeen[value] = struct{}{}
 		}
-		matches = append(matches, Match{
-			Pattern: pattern,
-			Value:   value,
-			Start:   start,
-			End:     end,
-		})
-		perTypeCounts[pattern]++
-		return true
+		return visit(pattern, start, end)
 	}
 
 	for i := 0; i < len(content); i++ {
-		if totalLimited && len(matches) >= maxTotal {
-			break
-		}
-
 		ch := content[i]
 
-		if enabled.awsAccessKey && ch == 'A' {
+		if enabled.awsAccessKey && (!useWant || want("aws_access_key")) && ch == 'A' {
 			if end, ok := matchAWSAccessKeyAt(content, i); ok {
-				add("aws_access_key", i, end)
+				if !emit("aws_access_key", i, end) {
+					return
+				}
 				i = end - 1
 				continue
 			}
 		}
 
-		if enabled.jwtToken && ch == 'e' {
+		if enabled.jwtToken && (!useWant || want("jwt_token")) && ch == 'e' {
 			if end, ok := matchJWTAt(content, i); ok {
-				add("jwt_token", i, end)
+				if !emit("jwt_token", i, end) {
+					return
+				}
 				i = end - 1
 				continue
 			}
 		}
 
-		if enabled.email && ch == '@' {
+		if enabled.email && (!useWant || want("email")) && ch == '@' {
 			if start, end, ok := matchEmailAroundAt(content, i); ok {
-				add("email", start, end)
+				if !emit("email", start, end) {
+					return
+				}
 				i = end - 1
 				continue
 			}
 		}
 
-		if enabled.apiKey && isASCIILetter(ch) {
+		if enabled.apiKey && (!useWant || want("api_key")) && isASCIILetter(ch) {
 			if end, ok := matchAPIKeyAt(content, i); ok {
-				add("api_key", i, end)
+				if !emit("api_key", i, end) {
+					return
+				}
 				i = end - 1
 				continue
 			}
@@ -115,24 +107,69 @@ func ScanDeterministicMatches(
 			continue
 		}
 
-		if enabled.ssn {
+		if enabled.ssn && (!useWant || want("ssn")) {
 			if end, ok := matchSSNAt(content, i); ok {
-				add("ssn", i, end)
+				if !emit("ssn", i, end) {
+					return
+				}
 				i = end - 1
 				continue
 			}
 		}
 
-		if enabled.creditCard {
+		if enabled.creditCard && (!useWant || want("credit_card")) {
 			end, ok := matchCreditCardAt(content, i)
 			if ok {
-				add("credit_card", i, end)
+				if !emit("credit_card", i, end) {
+					return
+				}
 			}
 			if end > i {
 				i = end - 1
 			}
 		}
 	}
+}
+
+func ScanDeterministicMatches(
+	content []byte,
+	patternNames []string,
+	maxPerType, maxTotal int,
+) []Match {
+	if len(content) == 0 || len(patternNames) == 0 {
+		return nil
+	}
+
+	perTypeLimited := maxPerType > 0
+	totalLimited := maxTotal > 0
+	perTypeCounts := make(map[string]int, len(patternNames))
+	matches := make([]Match, 0, 16)
+	ScanDeterministicVisit(
+		content,
+		patternNames,
+		func(pattern string) bool {
+			if totalLimited && len(matches) >= maxTotal {
+				return false
+			}
+			if perTypeLimited && perTypeCounts[pattern] >= maxPerType {
+				return false
+			}
+			return true
+		},
+		func(pattern string, start, end int) bool {
+			matches = append(matches, Match{
+				Pattern: pattern,
+				Value:   string(content[start:end]),
+				Start:   start,
+				End:     end,
+			})
+			perTypeCounts[pattern]++
+			if totalLimited && len(matches) >= maxTotal {
+				return false
+			}
+			return true
+		},
+	)
 
 	return matches
 }

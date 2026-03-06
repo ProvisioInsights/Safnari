@@ -14,6 +14,7 @@ type internalArtifactFilter struct {
 	outputBase string
 	outputExt  string
 	diagDir    string
+	cacheDir   string
 }
 
 func newInternalArtifactFilter(cfg *config.Config) *internalArtifactFilter {
@@ -47,6 +48,7 @@ func newInternalArtifactFilter(cfg *config.Config) *internalArtifactFilter {
 	}
 
 	filter.diagDir = normalizeArtifactPath(cfg.DiagDir)
+	filter.cacheDir = normalizeArtifactPath(cfg.DeltaCacheDir)
 	return filter
 }
 
@@ -70,6 +72,9 @@ func (f *internalArtifactFilter) ShouldSkip(path string) bool {
 		return false
 	}
 	if _, ok := f.exactPaths[absPath]; ok {
+		return true
+	}
+	if f.cacheDir != "" && (absPath == f.cacheDir || strings.HasPrefix(absPath, f.cacheDir+string(filepath.Separator))) {
 		return true
 	}
 	if f.matchesRotatedOutput(absPath) {

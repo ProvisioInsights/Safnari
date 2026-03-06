@@ -140,6 +140,38 @@ func TestScanSensitiveFlag(t *testing.T) {
 	}
 }
 
+func TestSensitiveMatchModeFlag(t *testing.T) {
+	oldArgs := os.Args
+	defer func() { os.Args = oldArgs }()
+	oldFlag := flag.CommandLine
+	flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ExitOnError)
+	defer func() { flag.CommandLine = oldFlag }()
+
+	os.Args = []string{"cmd", "--sensitive-match-mode", "first"}
+	cfg, err := LoadConfig()
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if cfg.SensitiveMatchMode != "first" {
+		t.Fatalf("expected sensitive-match-mode first, got %q", cfg.SensitiveMatchMode)
+	}
+}
+
+func TestValidateRejectsInvalidSensitiveMatchMode(t *testing.T) {
+	cfg := &Config{
+		ScanFiles:          true,
+		StartPaths:         []string{"/"},
+		OutputFormat:       "json",
+		ConcurrencyLevel:   1,
+		NiceLevel:          "high",
+		LogLevel:           "info",
+		SensitiveMatchMode: "invalid",
+	}
+	if err := cfg.validate(); err == nil {
+		t.Fatal("expected invalid sensitive-match-mode to fail validation")
+	}
+}
+
 func TestCollectSystemInfoFlag(t *testing.T) {
 	oldArgs := os.Args
 	defer func() { os.Args = oldArgs }()
@@ -283,6 +315,34 @@ func TestCheckUpdatesAndContentScanFlags(t *testing.T) {
 	}
 }
 
+func TestDeltaCacheFlags(t *testing.T) {
+	oldArgs := os.Args
+	defer func() { os.Args = oldArgs }()
+	oldFlag := flag.CommandLine
+	flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ExitOnError)
+	defer func() { flag.CommandLine = oldFlag }()
+
+	os.Args = []string{
+		"cmd",
+		"--delta-cache-mode", "mtime",
+		"--delta-cache-dir", "/tmp/safnari-delta-cache",
+		"--delta-cache-max-bytes", "4096",
+	}
+	cfg, err := LoadConfig()
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if cfg.DeltaCacheMode != "mtime" {
+		t.Fatalf("unexpected delta-cache-mode: %s", cfg.DeltaCacheMode)
+	}
+	if cfg.DeltaCacheDir != "/tmp/safnari-delta-cache" {
+		t.Fatalf("unexpected delta-cache-dir: %s", cfg.DeltaCacheDir)
+	}
+	if cfg.DeltaCacheMaxBytes != 4096 {
+		t.Fatalf("unexpected delta-cache-max-bytes: %d", cfg.DeltaCacheMaxBytes)
+	}
+}
+
 func TestOptimizationFlags(t *testing.T) {
 	oldArgs := os.Args
 	defer func() { os.Args = oldArgs }()
@@ -422,5 +482,17 @@ func TestOptimizationFlagValidation(t *testing.T) {
 	cfg.ContentScanMaxBytes = -1
 	if err := cfg.validate(); err == nil {
 		t.Fatal("expected invalid content-scan-max-bytes error")
+	}
+
+	cfg.ContentScanMaxBytes = 1024
+	cfg.DeltaCacheMode = "broken"
+	if err := cfg.validate(); err == nil {
+		t.Fatal("expected invalid delta-cache-mode error")
+	}
+
+	cfg.DeltaCacheMode = "chunk"
+	cfg.DeltaCacheMaxBytes = -1
+	if err := cfg.validate(); err == nil {
+		t.Fatal("expected invalid delta-cache-max-bytes error")
 	}
 }

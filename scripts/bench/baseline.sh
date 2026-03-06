@@ -9,15 +9,33 @@ echo "[bench-baseline] output directory: $OUT_DIR"
 
 pushd "$ROOT/src" >/dev/null
 SAFNARI_DISABLE_PROGRESS=1 go test -run '^$' -bench \
-  'BenchmarkScanFilesSyntheticTree|BenchmarkScanFilesCorpora|BenchmarkTraversal(Deep|Wide)Tree|BenchmarkLooksLikeTextFast' \
+  'BenchmarkCollectFileData|BenchmarkScanFilesSyntheticTree|BenchmarkScanFilesCorpora|BenchmarkDeltaSecondRunCorpora|BenchmarkTraversal(Deep|Wide)Tree|BenchmarkLooksLikeTextFast|BenchmarkChunkSource|BenchmarkStreamAho|BenchmarkWriterQueue|BenchmarkDeltaChunkCache' \
   -benchmem ./scanner | tee "$OUT_DIR/benchmark.txt"
 go test -run '^$' -bench 'BenchmarkTokenContains' -benchmem ./scanner/prefilter \
   | tee "$OUT_DIR/benchmark-prefilter.txt"
+SAFNARI_DISABLE_PROGRESS=1 go test -run '^$' -bench \
+  '^BenchmarkCollectFileData/(build-modules-per-call|reuse-prebuilt-modules)$' \
+  -benchmem -count=9 ./scanner | tee "$OUT_DIR/collect-file-data-samples.txt"
 SAFNARI_DISABLE_PROGRESS=1 go test -run '^$' -bench '^BenchmarkScanFilesSyntheticTree/(adaptive|ultra)$' \
   -benchmem -count=9 ./scanner | tee "$OUT_DIR/scan-samples.txt"
 SAFNARI_DISABLE_PROGRESS=1 go test -run '^$' -bench \
   '^BenchmarkScanFilesCorpora/sensitive_dense/(adaptive|ultra)$' -benchmem -count=9 ./scanner \
   | tee "$OUT_DIR/sensitive-samples.txt"
+SAFNARI_DISABLE_PROGRESS=1 go test -run '^$' -bench \
+  '^BenchmarkScanFilesCorpora/small_files/(adaptive|ultra)$' -benchmem -count=9 ./scanner \
+  | tee "$OUT_DIR/small-files-samples.txt"
+SAFNARI_DISABLE_PROGRESS=1 go test -run '^$' -bench \
+  '^BenchmarkScanFilesCorpora/mixed_heavy_tail/(adaptive|ultra)$' -benchmem -count=9 ./scanner \
+  | tee "$OUT_DIR/mixed-heavy-tail-samples.txt"
+SAFNARI_DISABLE_PROGRESS=1 go test -run '^$' -bench \
+  '^BenchmarkScanFilesCorpora/duplicate_logs/(adaptive|ultra)$' -benchmem -count=9 ./scanner \
+  | tee "$OUT_DIR/duplicate-logs-samples.txt"
+SAFNARI_DISABLE_PROGRESS=1 go test -run '^$' -bench \
+  '^BenchmarkDeltaSecondRunCorpora/duplicate_logs/(adaptive|ultra)$' -benchmem -count=9 ./scanner \
+  | tee "$OUT_DIR/delta-second-run-samples.txt"
+SAFNARI_DISABLE_PROGRESS=1 go test -run '^$' -bench \
+  '^BenchmarkDeltaSecondRunCorpora/duplicate_logs/(mtime|chunk)$' -benchmem -count=9 ./scanner \
+  | tee "$OUT_DIR/delta-cache-mode-samples.txt"
 popd >/dev/null
 
 extract_samples() {
@@ -75,17 +93,42 @@ mapfile -t ultra_sensitive_samples < <(extract_samples "$OUT_DIR/sensitive-sampl
   "BenchmarkScanFilesCorpora/sensitive_dense/ultra" "ns/op")
 mapfile -t adaptive_sensitive_samples < <(extract_samples "$OUT_DIR/sensitive-samples.txt" \
   "BenchmarkScanFilesCorpora/sensitive_dense/adaptive" "ns/op")
+mapfile -t ultra_small_files_samples < <(extract_samples "$OUT_DIR/small-files-samples.txt" \
+  "BenchmarkScanFilesCorpora/small_files/ultra" "ns/op")
+mapfile -t adaptive_small_files_samples < <(extract_samples "$OUT_DIR/small-files-samples.txt" \
+  "BenchmarkScanFilesCorpora/small_files/adaptive" "ns/op")
+mapfile -t ultra_mixed_heavy_tail_samples < <(extract_samples "$OUT_DIR/mixed-heavy-tail-samples.txt" \
+  "BenchmarkScanFilesCorpora/mixed_heavy_tail/ultra" "ns/op")
+mapfile -t adaptive_mixed_heavy_tail_samples < <(extract_samples "$OUT_DIR/mixed-heavy-tail-samples.txt" \
+  "BenchmarkScanFilesCorpora/mixed_heavy_tail/adaptive" "ns/op")
+mapfile -t ultra_duplicate_logs_samples < <(extract_samples "$OUT_DIR/duplicate-logs-samples.txt" \
+  "BenchmarkScanFilesCorpora/duplicate_logs/ultra" "ns/op")
+mapfile -t adaptive_duplicate_logs_samples < <(extract_samples "$OUT_DIR/duplicate-logs-samples.txt" \
+  "BenchmarkScanFilesCorpora/duplicate_logs/adaptive" "ns/op")
+mapfile -t ultra_delta_second_run_samples < <(extract_samples "$OUT_DIR/delta-second-run-samples.txt" \
+  "BenchmarkDeltaSecondRunCorpora/duplicate_logs/ultra" "ns/op")
+mapfile -t adaptive_delta_second_run_samples < <(extract_samples "$OUT_DIR/delta-second-run-samples.txt" \
+  "BenchmarkDeltaSecondRunCorpora/duplicate_logs/adaptive" "ns/op")
+mapfile -t chunk_delta_second_run_samples < <(extract_samples "$OUT_DIR/delta-cache-mode-samples.txt" \
+  "BenchmarkDeltaSecondRunCorpora/duplicate_logs/chunk" "ns/op")
+mapfile -t mtime_delta_second_run_samples < <(extract_samples "$OUT_DIR/delta-cache-mode-samples.txt" \
+  "BenchmarkDeltaSecondRunCorpora/duplicate_logs/mtime" "ns/op")
 
-p50_ms="$(median_ms "${ultra_ns_samples[@]}")"
-p95_ms="$(percentile_ms "${ultra_ns_samples[@]}")"
+synthetic_p50_ms="$(median_ms "${ultra_ns_samples[@]}")"
+synthetic_p95_ms="$(percentile_ms "${ultra_ns_samples[@]}")"
+sensitive_dense_p50_ms="$(median_ms "${ultra_sensitive_samples[@]}")"
+small_files_p50_ms="$(median_ms "${ultra_small_files_samples[@]}")"
+mixed_heavy_tail_p50_ms="$(median_ms "${ultra_mixed_heavy_tail_samples[@]}")"
+duplicate_logs_p50_ms="$(median_ms "${ultra_duplicate_logs_samples[@]}")"
+delta_second_run_p50_ms="$(median_ms "${ultra_delta_second_run_samples[@]}")"
 
-bytes_per_op="$(awk '/BenchmarkScanFilesSyntheticTree\/ultra/ {
+synthetic_bytes_per_op="$(awk '/BenchmarkScanFilesSyntheticTree\/ultra/ {
   for (i = 1; i <= NF; i++) if ($i == "B/op") value=$(i-1)
 } END {
   if (value != "") print value; else print "n/a"
 }' "$OUT_DIR/scan-samples.txt")"
 
-allocs_per_op="$(awk '/BenchmarkScanFilesSyntheticTree\/ultra/ {
+synthetic_allocs_per_op="$(awk '/BenchmarkScanFilesSyntheticTree\/ultra/ {
   for (i = 1; i <= NF; i++) if ($i == "allocs/op") value=$(i-1)
 } END {
   if (value != "") print value; else print "n/a"
@@ -93,6 +136,11 @@ allocs_per_op="$(awk '/BenchmarkScanFilesSyntheticTree\/ultra/ {
 
 synthetic_speedup="n/a"
 sensitive_speedup="n/a"
+small_files_speedup="n/a"
+mixed_heavy_tail_speedup="n/a"
+duplicate_logs_speedup="n/a"
+delta_second_run_speedup="n/a"
+delta_cache_mode_speedup="n/a"
 if (( ${#adaptive_ns_samples[@]} > 0 && ${#ultra_ns_samples[@]} > 0 )); then
   adaptive_median="${adaptive_ns_samples[$(( (${#adaptive_ns_samples[@]} - 1) / 2 ))]}"
   ultra_median="${ultra_ns_samples[$(( (${#ultra_ns_samples[@]} - 1) / 2 ))]}"
@@ -102,6 +150,31 @@ if (( ${#adaptive_sensitive_samples[@]} > 0 && ${#ultra_sensitive_samples[@]} > 
   adaptive_sensitive_median="${adaptive_sensitive_samples[$(( (${#adaptive_sensitive_samples[@]} - 1) / 2 ))]}"
   ultra_sensitive_median="${ultra_sensitive_samples[$(( (${#ultra_sensitive_samples[@]} - 1) / 2 ))]}"
   sensitive_speedup="$(ratio "$adaptive_sensitive_median" "$ultra_sensitive_median")"
+fi
+if (( ${#adaptive_small_files_samples[@]} > 0 && ${#ultra_small_files_samples[@]} > 0 )); then
+  adaptive_small_files_median="${adaptive_small_files_samples[$(( (${#adaptive_small_files_samples[@]} - 1) / 2 ))]}"
+  ultra_small_files_median="${ultra_small_files_samples[$(( (${#ultra_small_files_samples[@]} - 1) / 2 ))]}"
+  small_files_speedup="$(ratio "$adaptive_small_files_median" "$ultra_small_files_median")"
+fi
+if (( ${#adaptive_mixed_heavy_tail_samples[@]} > 0 && ${#ultra_mixed_heavy_tail_samples[@]} > 0 )); then
+  adaptive_mixed_heavy_tail_median="${adaptive_mixed_heavy_tail_samples[$(( (${#adaptive_mixed_heavy_tail_samples[@]} - 1) / 2 ))]}"
+  ultra_mixed_heavy_tail_median="${ultra_mixed_heavy_tail_samples[$(( (${#ultra_mixed_heavy_tail_samples[@]} - 1) / 2 ))]}"
+  mixed_heavy_tail_speedup="$(ratio "$adaptive_mixed_heavy_tail_median" "$ultra_mixed_heavy_tail_median")"
+fi
+if (( ${#adaptive_duplicate_logs_samples[@]} > 0 && ${#ultra_duplicate_logs_samples[@]} > 0 )); then
+  adaptive_duplicate_logs_median="${adaptive_duplicate_logs_samples[$(( (${#adaptive_duplicate_logs_samples[@]} - 1) / 2 ))]}"
+  ultra_duplicate_logs_median="${ultra_duplicate_logs_samples[$(( (${#ultra_duplicate_logs_samples[@]} - 1) / 2 ))]}"
+  duplicate_logs_speedup="$(ratio "$adaptive_duplicate_logs_median" "$ultra_duplicate_logs_median")"
+fi
+if (( ${#adaptive_delta_second_run_samples[@]} > 0 && ${#ultra_delta_second_run_samples[@]} > 0 )); then
+  adaptive_delta_second_run_median="${adaptive_delta_second_run_samples[$(( (${#adaptive_delta_second_run_samples[@]} - 1) / 2 ))]}"
+  ultra_delta_second_run_median="${ultra_delta_second_run_samples[$(( (${#ultra_delta_second_run_samples[@]} - 1) / 2 ))]}"
+  delta_second_run_speedup="$(ratio "$adaptive_delta_second_run_median" "$ultra_delta_second_run_median")"
+fi
+if (( ${#mtime_delta_second_run_samples[@]} > 0 && ${#chunk_delta_second_run_samples[@]} > 0 )); then
+  mtime_delta_second_run_median="${mtime_delta_second_run_samples[$(( (${#mtime_delta_second_run_samples[@]} - 1) / 2 ))]}"
+  chunk_delta_second_run_median="${chunk_delta_second_run_samples[$(( (${#chunk_delta_second_run_samples[@]} - 1) / 2 ))]}"
+  delta_cache_mode_speedup="$(ratio "$mtime_delta_second_run_median" "$chunk_delta_second_run_median")"
 fi
 
 peak_rss_kb="n/a"
@@ -133,10 +206,15 @@ sed \
   -e "s/<timestamp>/$timestamp/g" \
   -e "s/<commit>/$commit/g" \
   -e "s/<profile-name>/ultra/g" \
-  -e "s/<p50_ms>/$p50_ms/g" \
-  -e "s/<p95_ms>/$p95_ms/g" \
-  -e "s/<bytes_per_op>/$bytes_per_op/g" \
-  -e "s/<allocs_per_op>/$allocs_per_op/g" \
+  -e "s/<synthetic_p50_ms>/$synthetic_p50_ms/g" \
+  -e "s/<synthetic_p95_ms>/$synthetic_p95_ms/g" \
+  -e "s/<synthetic_bytes_per_op>/$synthetic_bytes_per_op/g" \
+  -e "s/<synthetic_allocs_per_op>/$synthetic_allocs_per_op/g" \
+  -e "s/<sensitive_dense_p50_ms>/$sensitive_dense_p50_ms/g" \
+  -e "s/<small_files_p50_ms>/$small_files_p50_ms/g" \
+  -e "s/<mixed_heavy_tail_p50_ms>/$mixed_heavy_tail_p50_ms/g" \
+  -e "s/<duplicate_logs_p50_ms>/$duplicate_logs_p50_ms/g" \
+  -e "s/<delta_second_run_p50_ms>/$delta_second_run_p50_ms/g" \
   -e "s/<peak_rss_kb>/$peak_rss_kb/g" \
   "$ROOT/scripts/bench/report-template.md" >"$OUT_DIR/report.md"
 
@@ -146,11 +224,22 @@ cat >>"$OUT_DIR/report.md" <<EOF
 
 - Synthetic tree adaptive/ultra p50 speedup: \`${synthetic_speedup}x\`
 - Sensitive-dense adaptive/ultra p50 speedup: \`${sensitive_speedup}x\`
+- Small-files adaptive/ultra p50 speedup: \`${small_files_speedup}x\`
+- Mixed-heavy-tail adaptive/ultra p50 speedup: \`${mixed_heavy_tail_speedup}x\`
+- Duplicate-logs adaptive/ultra p50 speedup: \`${duplicate_logs_speedup}x\`
+- Delta second-run adaptive/ultra p50 speedup: \`${delta_second_run_speedup}x\`
+- Delta second-run chunk/mtime p50 speedup: \`${delta_cache_mode_speedup}x\`
 EOF
 
 echo "[bench-baseline] generated:"
 echo "  - $OUT_DIR/benchmark.txt"
 echo "  - $OUT_DIR/benchmark-prefilter.txt"
+echo "  - $OUT_DIR/collect-file-data-samples.txt"
 echo "  - $OUT_DIR/scan-samples.txt"
 echo "  - $OUT_DIR/sensitive-samples.txt"
+echo "  - $OUT_DIR/small-files-samples.txt"
+echo "  - $OUT_DIR/mixed-heavy-tail-samples.txt"
+echo "  - $OUT_DIR/duplicate-logs-samples.txt"
+echo "  - $OUT_DIR/delta-second-run-samples.txt"
+echo "  - $OUT_DIR/delta-cache-mode-samples.txt"
 echo "  - $OUT_DIR/report.md"

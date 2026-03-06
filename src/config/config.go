@@ -44,6 +44,9 @@ type Config struct {
 	FuzzyMinSize            int64             `json:"fuzzy_min_size"`
 	FuzzyMaxSize            int64             `json:"fuzzy_max_size"`
 	DeltaScan               bool              `json:"delta_scan"`
+	DeltaCacheMode          string            `json:"delta_cache_mode"`
+	DeltaCacheDir           string            `json:"delta_cache_dir"`
+	DeltaCacheMaxBytes      int64             `json:"delta_cache_max_bytes"`
 	LastScanFile            string            `json:"last_scan_file"`
 	LastScanTime            string            `json:"last_scan_time"`
 	SkipCount               bool              `json:"skip_count"`
@@ -68,6 +71,7 @@ type Config struct {
 	PerfProfile             string            `json:"perf_profile"`
 	SensitiveEngine         string            `json:"sensitive_engine"`
 	SensitiveLongtail       string            `json:"sensitive_longtail"`
+	SensitiveMatchMode      string            `json:"sensitive_match_mode"`
 	SensitiveWindowBytes    int               `json:"sensitive_window_bytes"`
 	ContentReadMode         string            `json:"content_read_mode"`
 	StreamChunkSize         int               `json:"stream_chunk_size"`
@@ -122,6 +126,9 @@ func LoadConfig() (*Config, error) {
 		FuzzyMinSize:            256,
 		FuzzyMaxSize:            20 * 1024 * 1024,
 		DeltaScan:               false,
+		DeltaCacheMode:          "chunk",
+		DeltaCacheDir:           defaultDeltaCacheDir(),
+		DeltaCacheMaxBytes:      1 << 30,
 		LastScanFile:            ".safnari_last_scan",
 		SkipCount:               true,
 		SensitiveMaxPerType:     100,
@@ -145,6 +152,7 @@ func LoadConfig() (*Config, error) {
 		PerfProfile:             "adaptive",
 		SensitiveEngine:         "auto",
 		SensitiveLongtail:       "sampled",
+		SensitiveMatchMode:      "all",
 		SensitiveWindowBytes:    4096,
 		ContentReadMode:         "auto",
 		StreamChunkSize:         256 * 1024,
@@ -231,6 +239,9 @@ func LoadConfig() (*Config, error) {
 	fuzzyMinSize := flag.Int64("fuzzy-min-size", cfg.FuzzyMinSize, fmt.Sprintf("Minimum file size in bytes for fuzzy hashing (default: %d).", cfg.FuzzyMinSize))
 	fuzzyMaxSize := flag.Int64("fuzzy-max-size", cfg.FuzzyMaxSize, fmt.Sprintf("Maximum file size in bytes for fuzzy hashing (default: %d).", cfg.FuzzyMaxSize))
 	deltaScan := flag.Bool("delta-scan", cfg.DeltaScan, fmt.Sprintf("Only scan files modified since the last run (default: %t).", cfg.DeltaScan))
+	deltaCacheMode := flag.String("delta-cache-mode", cfg.DeltaCacheMode, fmt.Sprintf("Delta cache mode: chunk or mtime (default: %s).", cfg.DeltaCacheMode))
+	deltaCacheDir := flag.String("delta-cache-dir", cfg.DeltaCacheDir, fmt.Sprintf("Persistent delta cache directory (default: %s).", cfg.DeltaCacheDir))
+	deltaCacheMaxBytes := flag.Int64("delta-cache-max-bytes", cfg.DeltaCacheMaxBytes, fmt.Sprintf("Maximum on-disk bytes used by the delta cache (default: %d).", cfg.DeltaCacheMaxBytes))
 	lastScanFile := flag.String("last-scan-file", cfg.LastScanFile, fmt.Sprintf("Path to timestamp file for delta scans (default: %s).", cfg.LastScanFile))
 	lastScanTime := flag.String("last-scan", cfg.LastScanTime, "Timestamp of last scan in RFC3339 format (default: none).")
 	redactSensitive := flag.String("redact-sensitive", cfg.RedactSensitive, "Redact sensitive data in output: mask or hash (default: none).")
@@ -270,6 +281,11 @@ func LoadConfig() (*Config, error) {
 		"sensitive-longtail",
 		cfg.SensitiveLongtail,
 		"Long-tail sensitive pattern handling: off, sampled, or full (default: sampled).",
+	)
+	sensitiveMatchMode := flag.String(
+		"sensitive-match-mode",
+		cfg.SensitiveMatchMode,
+		"Sensitive match capture mode: all or first (default: all).",
 	)
 	sensitiveWindowBytes := flag.Int(
 		"sensitive-window-bytes",
@@ -388,6 +404,12 @@ func LoadConfig() (*Config, error) {
 			cfg.FuzzyMaxSize = *fuzzyMaxSize
 		case "delta-scan":
 			cfg.DeltaScan = *deltaScan
+		case "delta-cache-mode":
+			cfg.DeltaCacheMode = strings.ToLower(strings.TrimSpace(*deltaCacheMode))
+		case "delta-cache-dir":
+			cfg.DeltaCacheDir = strings.TrimSpace(*deltaCacheDir)
+		case "delta-cache-max-bytes":
+			cfg.DeltaCacheMaxBytes = *deltaCacheMaxBytes
 		case "last-scan-file":
 			cfg.LastScanFile = *lastScanFile
 		case "last-scan":
@@ -436,6 +458,8 @@ func LoadConfig() (*Config, error) {
 			cfg.SensitiveEngine = strings.ToLower(strings.TrimSpace(*sensitiveEngine))
 		case "sensitive-longtail":
 			cfg.SensitiveLongtail = strings.ToLower(strings.TrimSpace(*sensitiveLongtail))
+		case "sensitive-match-mode":
+			cfg.SensitiveMatchMode = strings.ToLower(strings.TrimSpace(*sensitiveMatchMode))
 		case "sensitive-window-bytes":
 			cfg.SensitiveWindowBytes = *sensitiveWindowBytes
 		case "content-read-mode":
@@ -487,6 +511,7 @@ func LoadConfig() (*Config, error) {
 	cfg.PerfProfile = strings.ToLower(strings.TrimSpace(cfg.PerfProfile))
 	cfg.SensitiveEngine = strings.ToLower(strings.TrimSpace(cfg.SensitiveEngine))
 	cfg.SensitiveLongtail = strings.ToLower(strings.TrimSpace(cfg.SensitiveLongtail))
+	cfg.SensitiveMatchMode = strings.ToLower(strings.TrimSpace(cfg.SensitiveMatchMode))
 	cfg.ContentReadMode = strings.ToLower(strings.TrimSpace(cfg.ContentReadMode))
 	cfg.JSONLayout = strings.ToLower(strings.TrimSpace(cfg.JSONLayout))
 	if cfg.RedactSensitive == "none" {
@@ -501,8 +526,17 @@ func LoadConfig() (*Config, error) {
 	if cfg.SensitiveLongtail == "" {
 		cfg.SensitiveLongtail = "sampled"
 	}
+	if cfg.SensitiveMatchMode == "" {
+		cfg.SensitiveMatchMode = "all"
+	}
 	if cfg.ContentReadMode == "" {
 		cfg.ContentReadMode = "auto"
+	}
+	if cfg.DeltaCacheMode == "" {
+		cfg.DeltaCacheMode = "chunk"
+	}
+	if cfg.DeltaCacheDir == "" {
+		cfg.DeltaCacheDir = defaultDeltaCacheDir()
 	}
 	if cfg.SensitiveWindowBytes <= 0 {
 		cfg.SensitiveWindowBytes = 4096
@@ -596,11 +630,20 @@ func (cfg *Config) validate() error {
 	if strings.TrimSpace(cfg.SensitiveLongtail) == "" {
 		cfg.SensitiveLongtail = "sampled"
 	}
+	if strings.TrimSpace(cfg.SensitiveMatchMode) == "" {
+		cfg.SensitiveMatchMode = "all"
+	}
 	if strings.TrimSpace(cfg.ContentReadMode) == "" {
 		cfg.ContentReadMode = "auto"
 	}
 	if strings.TrimSpace(cfg.JSONLayout) == "" {
 		cfg.JSONLayout = "ndjson"
+	}
+	if strings.TrimSpace(cfg.DeltaCacheMode) == "" {
+		cfg.DeltaCacheMode = "chunk"
+	}
+	if strings.TrimSpace(cfg.DeltaCacheDir) == "" {
+		cfg.DeltaCacheDir = defaultDeltaCacheDir()
 	}
 	if cfg.SensitiveWindowBytes <= 0 {
 		cfg.SensitiveWindowBytes = 4096
@@ -656,8 +699,17 @@ func (cfg *Config) validate() error {
 	if cfg.SensitiveLongtail != "off" && cfg.SensitiveLongtail != "sampled" && cfg.SensitiveLongtail != "full" {
 		return fmt.Errorf("invalid sensitive-longtail value: %s", cfg.SensitiveLongtail)
 	}
+	if cfg.SensitiveMatchMode != "all" && cfg.SensitiveMatchMode != "first" {
+		return fmt.Errorf("invalid sensitive-match-mode value: %s", cfg.SensitiveMatchMode)
+	}
 	if cfg.ContentReadMode != "stream" && cfg.ContentReadMode != "mmap" && cfg.ContentReadMode != "auto" {
 		return fmt.Errorf("invalid content-read-mode value: %s", cfg.ContentReadMode)
+	}
+	if cfg.DeltaCacheMode != "chunk" && cfg.DeltaCacheMode != "mtime" {
+		return fmt.Errorf("invalid delta-cache-mode value: %s", cfg.DeltaCacheMode)
+	}
+	if cfg.DeltaCacheMaxBytes < 0 {
+		return fmt.Errorf("delta-cache-max-bytes must be zero or positive")
 	}
 	if cfg.JSONLayout != "ndjson" {
 		return fmt.Errorf("invalid json-layout value: %s", cfg.JSONLayout)
@@ -751,6 +803,14 @@ func parseCustomPatterns(input string) map[string]string {
 		return map[string]string{}
 	}
 	return patterns
+}
+
+func defaultDeltaCacheDir() string {
+	base, err := os.UserCacheDir()
+	if err != nil || strings.TrimSpace(base) == "" {
+		return ".safnari-cache/delta-cache"
+	}
+	return base + string(os.PathSeparator) + "safnari" + string(os.PathSeparator) + "delta-cache"
 }
 
 func parseHeaders(input string) map[string]string {

@@ -3,11 +3,14 @@ package output
 import (
 	"bufio"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -51,6 +54,9 @@ func TestOutputLifecycle(t *testing.T) {
 	if records[0].SchemaVersion != SchemaVersion {
 		t.Fatalf("unexpected schema version: %s", records[0].SchemaVersion)
 	}
+	if records[len(records)-1].RecordType != "metrics" {
+		t.Fatalf("expected metrics record last, got %q", records[len(records)-1].RecordType)
+	}
 }
 
 func TestWriteDataConcurrent(t *testing.T) {
@@ -82,12 +88,12 @@ func TestWriteDataConcurrent(t *testing.T) {
 		t.Fatalf("close: %v", err)
 	}
 
-	content, err := os.ReadFile(tmp.Name())
-	if err != nil {
-		t.Fatalf("read: %v", err)
+	records := readNDJSONRecords(t, tmp.Name())
+	if got := countRecordType(records, "file"); got != 5 {
+		t.Fatalf("expected 5 file records, got %d", got)
 	}
 	for i := range 5 {
-		if !strings.Contains(string(content), strconv.Itoa(i)) {
+		if !containsPayload(records, strconv.Itoa(i)) {
 			t.Fatalf("missing entry %d", i)
 		}
 	}
@@ -119,6 +125,108 @@ func TestOutputRotation(t *testing.T) {
 	}
 	if _, err := os.Stat(strings.TrimSuffix(base, ".ndjson") + ".1.ndjson"); err != nil {
 		t.Fatalf("rotation file not created")
+	}
+
+	records := readRotatedNDJSONRecords(t, base)
+	if got := countRecordType(records, "file"); got != 5 {
+		t.Fatalf("expected 5 rotated file records, got %d", got)
+	}
+	if records[len(records)-1].RecordType != "metrics" {
+		t.Fatalf("expected metrics record last after rotation, got %q", records[len(records)-1].RecordType)
+	}
+}
+
+func TestCloseDrainsAcceptedWrites(t *testing.T) {
+	tmp, err := os.CreateTemp("", "drain*.ndjson")
+	if err != nil {
+		t.Fatalf("temp file: %v", err)
+	}
+	defer os.Remove(tmp.Name())
+
+	cfg := &config.Config{OutputFileName: tmp.Name(), OutputFormat: "json"}
+	sysInfo := &systeminfo.SystemInfo{RunningProcesses: []systeminfo.ProcessInfo{}}
+	w, err := New(cfg, sysInfo, &Metrics{})
+	if err != nil {
+		t.Fatalf("init: %v", err)
+	}
+
+	const (
+		writers   = 8
+		perWriter = 512
+	)
+
+	var accepted atomic.Int64
+	var wg sync.WaitGroup
+	errCh := make(chan error, writers)
+	start := make(chan struct{})
+	payload := strings.Repeat("x", 128)
+
+	for i := range writers {
+		wg.Add(1)
+		go func(writerID int) {
+			defer wg.Done()
+			<-start
+			for seq := range perWriter {
+				err := w.WriteData(map[string]interface{}{
+					"writer": writerID,
+					"seq":    seq,
+					"data":   payload,
+				})
+				if err != nil {
+					if !errors.Is(err, errWriterClosed) {
+						errCh <- err
+					}
+					return
+				}
+				accepted.Add(1)
+			}
+		}(i)
+	}
+
+	close(start)
+	time.Sleep(5 * time.Millisecond)
+
+	closeDone := make(chan error, 1)
+	go func() {
+		closeDone <- w.Close()
+	}()
+
+	wg.Wait()
+	if err := <-closeDone; err != nil {
+		t.Fatalf("close: %v", err)
+	}
+	close(errCh)
+	for err := range errCh {
+		t.Fatalf("unexpected write error: %v", err)
+	}
+
+	records := readNDJSONRecords(t, tmp.Name())
+	if got := countRecordType(records, "file"); got != int(accepted.Load()) {
+		t.Fatalf("expected %d drained file records, got %d", accepted.Load(), got)
+	}
+	if records[len(records)-1].RecordType != "metrics" {
+		t.Fatalf("expected metrics record last after drain, got %q", records[len(records)-1].RecordType)
+	}
+}
+
+func TestWriteDataAfterCloseReturnsClosedError(t *testing.T) {
+	tmp, err := os.CreateTemp("", "closed*.ndjson")
+	if err != nil {
+		t.Fatalf("temp file: %v", err)
+	}
+	defer os.Remove(tmp.Name())
+
+	cfg := &config.Config{OutputFileName: tmp.Name(), OutputFormat: "json"}
+	sysInfo := &systeminfo.SystemInfo{RunningProcesses: []systeminfo.ProcessInfo{}}
+	w, err := New(cfg, sysInfo, &Metrics{})
+	if err != nil {
+		t.Fatalf("init: %v", err)
+	}
+	if err := w.Close(); err != nil {
+		t.Fatalf("close: %v", err)
+	}
+	if err := w.WriteData(map[string]interface{}{"path": "late"}); !errors.Is(err, errWriterClosed) {
+		t.Fatalf("expected closed writer error, got %v", err)
 	}
 }
 
@@ -199,4 +307,62 @@ func readNDJSONRecords(t *testing.T, path string) []ndjsonTestRecord {
 		t.Fatalf("scan ndjson: %v", err)
 	}
 	return records
+}
+
+func readRotatedNDJSONRecords(t *testing.T, base string) []ndjsonTestRecord {
+	t.Helper()
+
+	ext := filepath.Ext(base)
+	stem := strings.TrimSuffix(base, ext)
+	paths := []string{base}
+
+	rotated, err := filepath.Glob(stem + ".*" + ext)
+	if err != nil {
+		t.Fatalf("glob rotated output: %v", err)
+	}
+	paths = append(paths, rotated...)
+	slices.SortFunc(paths, func(a, b string) int {
+		return rotationIndex(a, stem, ext) - rotationIndex(b, stem, ext)
+	})
+
+	var records []ndjsonTestRecord
+	for _, path := range paths {
+		records = append(records, readNDJSONRecords(t, path)...)
+	}
+	return records
+}
+
+func rotationIndex(path, stem, ext string) int {
+	if path == stem+ext {
+		return 0
+	}
+	trimmed := strings.TrimPrefix(path, stem+".")
+	trimmed = strings.TrimSuffix(trimmed, ext)
+	index, err := strconv.Atoi(trimmed)
+	if err != nil {
+		return 1 << 30
+	}
+	return index
+}
+
+func countRecordType(records []ndjsonTestRecord, recordType string) int {
+	count := 0
+	for _, record := range records {
+		if record.RecordType == recordType {
+			count++
+		}
+	}
+	return count
+}
+
+func containsPayload(records []ndjsonTestRecord, want string) bool {
+	for _, record := range records {
+		if record.RecordType != "file" {
+			continue
+		}
+		if strings.Contains(string(record.Payload), want) {
+			return true
+		}
+	}
+	return false
 }

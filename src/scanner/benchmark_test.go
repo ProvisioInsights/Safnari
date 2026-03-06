@@ -51,7 +51,7 @@ func BenchmarkCollectFileData(b *testing.B) {
 	b.Run("build-modules-per-call", func(b *testing.B) {
 		b.ReportAllocs()
 		for i := 0; i < b.N; i++ {
-			data, err := collectFileData(ctx, tmp.Name(), fi, cfg, patterns, nil)
+			data, err := collectFileData(ctx, tmp.Name(), fi, cfg, patterns, nil, nil)
 			if err != nil {
 				b.Fatal(err)
 			}
@@ -62,7 +62,7 @@ func BenchmarkCollectFileData(b *testing.B) {
 	b.Run("reuse-prebuilt-modules", func(b *testing.B) {
 		b.ReportAllocs()
 		for i := 0; i < b.N; i++ {
-			data, err := collectFileData(ctx, tmp.Name(), fi, cfg, patterns, prebuiltModules)
+			data, err := collectFileData(ctx, tmp.Name(), fi, cfg, patterns, prebuiltModules, nil)
 			if err != nil {
 				b.Fatal(err)
 			}
@@ -111,14 +111,14 @@ func BenchmarkProcessFileStatOverhead(b *testing.B) {
 	b.Run("stat-inside-worker", func(b *testing.B) {
 		b.ReportAllocs()
 		for i := 0; i < b.N; i++ {
-			processFile(ctx, tmp.Name(), nil, cfg, w, nil, modules, true)
+			processFile(ctx, tmp.Name(), nil, cfg, w, nil, modules, nil, true)
 		}
 	})
 
 	b.Run("prefetched-fileinfo", func(b *testing.B) {
 		b.ReportAllocs()
 		for i := 0; i < b.N; i++ {
-			processFile(ctx, tmp.Name(), fi, cfg, w, nil, modules, true)
+			processFile(ctx, tmp.Name(), fi, cfg, w, nil, modules, nil, true)
 		}
 	})
 }
