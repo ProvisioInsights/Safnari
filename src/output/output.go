@@ -275,13 +275,13 @@ func (w *Writer) emitInitialRecords() error {
 	if err := w.writeRecord("system_info", w.sysInfo); err != nil {
 		return err
 	}
-	w.emitRecordLocked("system_info", w.sysInfo)
+	w.emitRecord("system_info", w.sysInfo)
 	for i := range w.sysInfo.RunningProcesses {
 		proc := w.sysInfo.RunningProcesses[i]
 		if err := w.writeRecord("process", &proc); err != nil {
 			return err
 		}
-		w.emitRecordLocked("process", &proc)
+		w.emitRecord("process", &proc)
 	}
 	return nil
 }
@@ -294,11 +294,11 @@ func (w *Writer) emitMetricsLocked() error {
 	if err := w.writeRecord("metrics", w.metrics); err != nil {
 		return err
 	}
-	w.emitRecordLocked("metrics", w.metrics)
+	w.emitRecord("metrics", w.metrics)
 	return nil
 }
 
-func (w *Writer) emitRecordLocked(recordType string, payload interface{}) {
+func (w *Writer) emitRecord(recordType string, payload interface{}) {
 	if w.otel == nil {
 		return
 	}
@@ -354,7 +354,7 @@ func (w *Writer) startAsyncWriter() {
 				continue
 			}
 			w.filesProcessed.Add(1)
-			w.emitRecordLocked("file", req.payload)
+			w.emitRecord("file", req.payload)
 
 			w.recordsSinceSync++
 			if w.shouldSync() {

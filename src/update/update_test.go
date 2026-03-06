@@ -75,3 +75,19 @@ func TestCheckForUpdateDateTagsCompareInOrder(t *testing.T) {
 		t.Fatal("expected newer dated release to be detected")
 	}
 }
+
+func TestCheckForUpdateOpaqueTagsDoNotTriggerFalsePositive(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"tag_name":"nightly-build-2","body":""}`))
+	}))
+	defer ts.Close()
+
+	_, _, newer, err := checkForUpdateURL("nightly-build-1", ts.URL)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if newer {
+		t.Fatal("did not expect opaque tag strings to be treated as ordered releases")
+	}
+}

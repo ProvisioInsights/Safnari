@@ -300,7 +300,7 @@ func deltaCacheFingerprint(cfg *config.Config, patterns map[string]*regexp.Regex
 		SensitiveMaxPerType  int      `json:"sensitive_max_per_type"`
 		SensitiveMaxTotal    int      `json:"sensitive_max_total"`
 		ContentScanMaxBytes  int64    `json:"content_scan_max_bytes"`
-		PatternNames         []string `json:"pattern_names"`
+		PatternDefs          []string `json:"pattern_defs"`
 	}{
 		CacheFormatVersion:   3,
 		SearchTerms:          append([]string(nil), normalizeSearchTerms(cfg.SearchTerms)...),
@@ -311,7 +311,7 @@ func deltaCacheFingerprint(cfg *config.Config, patterns map[string]*regexp.Regex
 		SensitiveMaxPerType:  cfg.SensitiveMaxPerType,
 		SensitiveMaxTotal:    cfg.SensitiveMaxTotal,
 		ContentScanMaxBytes:  cfg.ContentScanMaxBytes,
-		PatternNames:         sortedPatternNames(patterns),
+		PatternDefs:          sortedPatternDefs(patterns),
 	}
 	data, _ := json.Marshal(payload)
 	sum := sha256.Sum256(data)
@@ -325,6 +325,19 @@ func sortedPatternNames(patterns map[string]*regexp.Regexp) []string {
 	}
 	sort.Strings(names)
 	return names
+}
+
+func sortedPatternDefs(patterns map[string]*regexp.Regexp) []string {
+	defs := make([]string, 0, len(patterns))
+	for name, pattern := range patterns {
+		def := ""
+		if pattern != nil {
+			def = pattern.String()
+		}
+		defs = append(defs, name+"="+def)
+	}
+	sort.Strings(defs)
+	return defs
 }
 
 type deltaChunkHasher struct {

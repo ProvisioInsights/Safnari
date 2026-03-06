@@ -39,7 +39,7 @@ func remainingSensitiveTotalLimit(cfg *config.Config, totalCount, activePatterns
 func remainingSensitivePerTypeLimit(cfg *config.Config, pattern string, counts map[string]int) int {
 	limit := effectiveSensitivePerTypeLimit(cfg)
 	if limit <= 0 {
-		return 0
+		return -1
 	}
 	remaining := limit - counts[pattern]
 	if remaining < 0 {

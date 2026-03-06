@@ -138,7 +138,7 @@ func (fc *FileContext) contentScanLimit() int64 {
 		return 0
 	}
 	if fc.Cfg.ContentScanMaxBytes < 0 {
-		return 0
+		return defaultContentScanMaxBytes
 	}
 	return fc.Cfg.ContentScanMaxBytes
 }

@@ -174,3 +174,16 @@ func TestShouldChunkCacheSensitiveAllCriticalIgnoresLongtail(t *testing.T) {
 		t.Fatal("expected first-match mode to bypass chunk-sensitive cache reuse")
 	}
 }
+
+func TestDeltaCacheFingerprintIncludesPatternBodies(t *testing.T) {
+	cfg := &config.Config{
+		SearchTerms:       []string{"ALPHA"},
+		SensitiveEngine:   "auto",
+		SensitiveLongtail: "sampled",
+	}
+	first := GetPatterns(nil, map[string]string{"token": "tok_[0-9]+"}, nil)
+	second := GetPatterns(nil, map[string]string{"token": "token_[0-9]+"}, nil)
+	if deltaCacheFingerprint(cfg, first) == deltaCacheFingerprint(cfg, second) {
+		t.Fatal("expected delta cache fingerprint to change when custom regex body changes")
+	}
+}

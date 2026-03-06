@@ -148,7 +148,7 @@ func readContentChunks(file *os.File, content []byte, chunkSize int, maxSize int
 
 func clampContentMaxSize(maxSize int64) int64 {
 	if maxSize < 0 {
-		return 0
+		return defaultContentScanMaxBytes
 	}
 	return maxSize
 }

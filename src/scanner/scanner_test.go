@@ -576,6 +576,13 @@ func TestSensitiveMatchesMayBeTruncated(t *testing.T) {
 	}
 }
 
+func TestRemainingSensitivePerTypeLimitZeroIsUnlimited(t *testing.T) {
+	cfg := &config.Config{SensitiveMaxPerType: 0}
+	if remaining := remainingSensitivePerTypeLimit(cfg, "email", map[string]int{"email": 5}); remaining == 0 {
+		t.Fatal("expected zero per-type limit to remain unlimited")
+	}
+}
+
 func TestBuildFuzzyHashers(t *testing.T) {
 	cfg := &config.Config{FuzzyHash: true}
 	hashers := buildFuzzyHashers(cfg)

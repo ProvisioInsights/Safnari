@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"os"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"time"
@@ -810,7 +811,7 @@ func defaultDeltaCacheDir() string {
 	if err != nil || strings.TrimSpace(base) == "" {
 		return ".safnari-cache/delta-cache"
 	}
-	return base + string(os.PathSeparator) + "safnari" + string(os.PathSeparator) + "delta-cache"
+	return filepath.Join(base, "safnari", "delta-cache")
 }
 
 func parseHeaders(input string) map[string]string {

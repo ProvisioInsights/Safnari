@@ -7,23 +7,13 @@ on:
   pull_request:
 
 jobs:
-  benchmark:
-    strategy:
-      matrix:
-        include:
-          - os: ubuntu-latest
-            goos: linux
-            goarch: amd64
-          - os: macos-latest
-            goos: darwin
-            goarch: amd64
-          - os: windows-latest
-            goos: windows
-            goarch: amd64
-    runs-on: ${{ matrix.os }}
+  benchmark-pr:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-go@v4
+      - uses: actions/setup-go@v5
         with:
           go-version-file: src/go.mod
           cache-dependency-path: src/go.sum
@@ -42,25 +32,108 @@ jobs:
         shell: bash
 
       - name: Capture benchmark artifact directory
+        if: always()
         id: bench_dir
         run: |
-          latest="$(ls -dt artifacts/bench/[0-9]* | head -n1)"
+          latest="$(find artifacts/bench -maxdepth 1 -mindepth 1 -type d -name '[0-9]*' -print 2>/dev/null | sort -r | head -n1)"
           echo "dir=$latest" >> "$GITHUB_OUTPUT"
         shell: bash
 
       - uses: actions/upload-artifact@v4
+        if: always() && steps.bench_dir.outputs.dir != ''
+        with:
+          name: benchmarks-linux-amd64
+          path: ${{ steps.bench_dir.outputs.dir }}
+
+      - name: Capture gate artifact directory
+        if: always()
+        id: gate_dir
+        run: |
+          latest="$(find artifacts/bench -maxdepth 1 -mindepth 1 -type d -name 'gate-*' -print 2>/dev/null | sort -r | head -n1)"
+          echo "dir=$latest" >> "$GITHUB_OUTPUT"
+        shell: bash
+
+      - uses: actions/upload-artifact@v4
+        if: always() && steps.gate_dir.outputs.dir != ''
+        with:
+          name: perf-gate-linux-amd64
+          path: ${{ steps.gate_dir.outputs.dir }}
+
+      - name: Generate PGO profile
+        run: make profile-generate
+        shell: bash
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: pgo-profile-linux-amd64
+          path: src/pgo/default.pgo
+
+      - name: Build with PGO
+        run: make build-pgo-ultra
+        shell: bash
+
+  benchmark-matrix:
+    if: github.event_name != 'pull_request'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            goos: linux
+            goarch: amd64
+          - os: macos-latest
+            goos: darwin
+            goarch: amd64
+          - os: windows-latest
+            goos: windows
+            goarch: amd64
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: src/go.mod
+          cache-dependency-path: src/go.sum
+
+      - name: Verify parity fixtures
+        run: go test ./scanner -run TestV2OutputNDJSONDeterministicAcrossProfiles -count=1
+        working-directory: src
+        shell: bash
+
+      - name: Run ultra benchmark harness
+        run: make bench-ultra
+        shell: bash
+
+      - name: Enforce performance gate
+        run: make bench-gate
+        shell: bash
+
+      - name: Capture benchmark artifact directory
+        if: always()
+        id: bench_dir
+        run: |
+          latest="$(find artifacts/bench -maxdepth 1 -mindepth 1 -type d -name '[0-9]*' -print 2>/dev/null | sort -r | head -n1)"
+          echo "dir=$latest" >> "$GITHUB_OUTPUT"
+        shell: bash
+
+      - uses: actions/upload-artifact@v4
+        if: always() && steps.bench_dir.outputs.dir != ''
         with:
           name: benchmarks-${{ matrix.goos }}-${{ matrix.goarch }}
           path: ${{ steps.bench_dir.outputs.dir }}
 
       - name: Capture gate artifact directory
+        if: always()
         id: gate_dir
         run: |
-          latest="$(ls -dt artifacts/bench/gate-* | head -n1)"
+          latest="$(find artifacts/bench -maxdepth 1 -mindepth 1 -type d -name 'gate-*' -print 2>/dev/null | sort -r | head -n1)"
           echo "dir=$latest" >> "$GITHUB_OUTPUT"
         shell: bash
 
       - uses: actions/upload-artifact@v4
+        if: always() && steps.gate_dir.outputs.dir != ''
         with:
           name: perf-gate-${{ matrix.goos }}-${{ matrix.goarch }}
           path: ${{ steps.gate_dir.outputs.dir }}
@@ -70,9 +143,8 @@ jobs:
         run: make profile-generate
         shell: bash
 
-      - name: Upload PGO profile
-        if: matrix.os == 'ubuntu-latest'
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4
+        if: always() && matrix.os == 'ubuntu-latest'
         with:
           name: pgo-profile-${{ matrix.goos }}-${{ matrix.goarch }}
           path: src/pgo/default.pgo
@@ -83,11 +155,12 @@ jobs:
         shell: bash
 
   simd-experiment:
+    if: github.event_name != 'pull_request'
     continue-on-error: true
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-go@v4
+      - uses: actions/setup-go@v5
         with:
           go-version-file: src/go.mod
           cache-dependency-path: src/go.sum
@@ -99,7 +172,7 @@ jobs:
       - name: Capture SIMD artifact directory
         id: simd_dir
         run: |
-          latest="$(ls -dt artifacts/bench/simd-* | head -n1)"
+          latest="$(find artifacts/bench -maxdepth 1 -mindepth 1 -type d -name 'simd-*' -print 2>/dev/null | sort -r | head -n1)"
           echo "dir=$latest" >> "$GITHUB_OUTPUT"
         shell: bash
 

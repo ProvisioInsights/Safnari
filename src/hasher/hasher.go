@@ -87,10 +87,10 @@ func (s *Set) Write(chunk []byte) {
 }
 
 func (s *Set) Sum() map[string]string {
-	hashes := make(map[string]string, len(s.hashers))
 	if s == nil {
-		return hashes
+		return map[string]string{}
 	}
+	hashes := make(map[string]string, len(s.hashers))
 	for i := range s.hashers {
 		hashes[s.hashers[i].name] = hex.EncodeToString(s.hashers[i].h.Sum(nil))
 	}

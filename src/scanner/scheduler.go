@@ -147,8 +147,8 @@ func pickScheduledTask(
 			continue
 		}
 		if now.Sub(queue[0].enqueuedAt) >= schedulerAgingThreshold {
-			task := queue[0]
-			lanes[lane] = queue[1:]
+			task, rest := popScheduledTask(queue)
+			lanes[lane] = rest
 			return task, true
 		}
 	}
@@ -161,12 +161,18 @@ func pickScheduledTask(
 		if len(queue) == 0 {
 			continue
 		}
-		task := queue[0]
-		lanes[lane] = queue[1:]
+		task, rest := popScheduledTask(queue)
+		lanes[lane] = rest
 		*orderIndex = (*orderIndex + i + 1) % len(order)
 		return task, true
 	}
 	return scheduledTask{}, false
+}
+
+func popScheduledTask(queue []scheduledTask) (scheduledTask, []scheduledTask) {
+	task := queue[0]
+	queue[0] = scheduledTask{}
+	return task, queue[1:]
 }
 
 func classifyScheduledLane(task fileScanTask, cfg *config.Config) schedulerLane {

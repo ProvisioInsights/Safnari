@@ -57,7 +57,7 @@ func isNewerRelease(current, latest string) bool {
 	if newer, ok := compareSemver(latest, current); ok {
 		return newer > 0
 	}
-	return latest != current
+	return false
 }
 
 func compareSemver(left, right string) (int, bool) {
