@@ -41,7 +41,7 @@ jobs:
 
       - name: Install Gitleaks
         run: |
-          go install github.com/gitleaks/gitleaks/v8@v8.24.2
+          go install github.com/zricethezav/gitleaks/v8@v8.24.2
           echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
 
       - name: Run Gitleaks
