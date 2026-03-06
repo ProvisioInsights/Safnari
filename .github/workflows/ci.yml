@@ -34,11 +34,15 @@ jobs:
       security-events: write
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: src/go.mod
+          cache-dependency-path: src/go.sum
 
       - name: Install Gitleaks
         run: |
-          curl -sSfL https://raw.githubusercontent.com/gitleaks/gitleaks/master/install.sh | sh -s -- -b "$RUNNER_TEMP/bin" v8.24.2
-          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+          go install github.com/gitleaks/gitleaks/v8@v8.24.2
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
 
       - name: Run Gitleaks
         id: gitleaks
