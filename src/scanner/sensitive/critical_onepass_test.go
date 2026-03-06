@@ -55,3 +55,18 @@ func TestScanDeterministicMatchesRespectsLimits(t *testing.T) {
 		t.Fatalf("expected per-type limit of 1, got email=%d aws=%d", emailCount, awsCount)
 	}
 }
+
+func TestScanDeterministicVisitStopsOnVisitorDecision(t *testing.T) {
+	content := []byte("a@test.com b@test.com c@test.com")
+	patterns := []string{"email"}
+	visited := 0
+
+	ScanDeterministicVisit(content, patterns, nil, func(pattern string, start, end int) bool {
+		visited++
+		return false
+	})
+
+	if visited != 1 {
+		t.Fatalf("expected visitor to stop after first match, got %d visits", visited)
+	}
+}

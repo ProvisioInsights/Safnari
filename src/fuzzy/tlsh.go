@@ -28,6 +28,17 @@ func (h TLSHHasher) HashFile(path string) (string, error) {
 	return hash.String(), nil
 }
 
+func (h TLSHHasher) HashBytes(content []byte) (string, error) {
+	hash, err := tlsh.HashBytes(content)
+	if err != nil {
+		return "", err
+	}
+	if hash == nil {
+		return "", nil
+	}
+	return hash.String(), nil
+}
+
 func init() {
 	Register(TLSHHasher{})
 }

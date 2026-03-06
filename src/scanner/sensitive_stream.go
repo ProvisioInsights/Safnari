@@ -62,10 +62,6 @@ func scanSensitiveDataDeterministicStream(
 	}
 	defer file.Close()
 
-	if info, err := file.Stat(); err == nil && maxSize > 0 && info.Size() > maxSize {
-		return nil, nil, nil
-	}
-
 	buffer := make([]byte, streamChunkSize)
 	carry := make([]byte, 0, streamOverlapBytes)
 	spanSeen := make(map[string]map[uint64]struct{}, len(patternNames))

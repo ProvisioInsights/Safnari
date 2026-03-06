@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"os"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"time"
@@ -20,6 +21,7 @@ type Config struct {
 	ScanSensitive           bool              `json:"scan_sensitive"`
 	ScanProcesses           bool              `json:"scan_processes"`
 	CollectSystemInfo       bool              `json:"collect_system_info"`
+	CheckUpdates            bool              `json:"check_updates"`
 	OutputFormat            string            `json:"output_format"`
 	OutputFileName          string            `json:"output_file_name"`
 	ConcurrencyLevel        int               `json:"concurrency_level"`
@@ -29,6 +31,7 @@ type Config struct {
 	IncludePatterns         []string          `json:"include_patterns"`
 	ExcludePatterns         []string          `json:"exclude_patterns"`
 	MaxFileSize             int64             `json:"max_file_size"`
+	ContentScanMaxBytes     int64             `json:"content_scan_max_bytes"`
 	MaxOutputFileSize       int64             `json:"max_output_file_size"`
 	LogLevel                string            `json:"log_level"`
 	MaxIOPerSecond          int               `json:"max_io_per_second"`
@@ -42,6 +45,9 @@ type Config struct {
 	FuzzyMinSize            int64             `json:"fuzzy_min_size"`
 	FuzzyMaxSize            int64             `json:"fuzzy_max_size"`
 	DeltaScan               bool              `json:"delta_scan"`
+	DeltaCacheMode          string            `json:"delta_cache_mode"`
+	DeltaCacheDir           string            `json:"delta_cache_dir"`
+	DeltaCacheMaxBytes      int64             `json:"delta_cache_max_bytes"`
 	LastScanFile            string            `json:"last_scan_file"`
 	LastScanTime            string            `json:"last_scan_time"`
 	SkipCount               bool              `json:"skip_count"`
@@ -66,6 +72,7 @@ type Config struct {
 	PerfProfile             string            `json:"perf_profile"`
 	SensitiveEngine         string            `json:"sensitive_engine"`
 	SensitiveLongtail       string            `json:"sensitive_longtail"`
+	SensitiveMatchMode      string            `json:"sensitive_match_mode"`
 	SensitiveWindowBytes    int               `json:"sensitive_window_bytes"`
 	ContentReadMode         string            `json:"content_read_mode"`
 	StreamChunkSize         int               `json:"stream_chunk_size"`
@@ -98,9 +105,10 @@ func LoadConfig() (*Config, error) {
 	cfg := &Config{
 		StartPaths:              []string{"."},
 		ScanFiles:               true,
-		ScanSensitive:           true,
-		ScanProcesses:           true,
-		CollectSystemInfo:       true,
+		ScanSensitive:           false,
+		ScanProcesses:           false,
+		CollectSystemInfo:       false,
+		CheckUpdates:            false,
 		OutputFormat:            "json",
 		OutputFileName:          fmt.Sprintf("safnari-%s-%d.ndjson", timestamp, now.Unix()),
 		ConcurrencyLevel:        runtime.NumCPU(),
@@ -108,6 +116,7 @@ func LoadConfig() (*Config, error) {
 		HashAlgorithms:          []string{"md5", "sha1", "sha256"},
 		SearchTerms:             []string{},
 		MaxFileSize:             10485760,
+		ContentScanMaxBytes:     10 * 1024 * 1024,
 		MaxOutputFileSize:       104857600,
 		LogLevel:                "info",
 		MaxIOPerSecond:          1000,
@@ -118,6 +127,9 @@ func LoadConfig() (*Config, error) {
 		FuzzyMinSize:            256,
 		FuzzyMaxSize:            20 * 1024 * 1024,
 		DeltaScan:               false,
+		DeltaCacheMode:          "chunk",
+		DeltaCacheDir:           defaultDeltaCacheDir(),
+		DeltaCacheMaxBytes:      1 << 30,
 		LastScanFile:            ".safnari_last_scan",
 		SkipCount:               true,
 		SensitiveMaxPerType:     100,
@@ -141,6 +153,7 @@ func LoadConfig() (*Config, error) {
 		PerfProfile:             "adaptive",
 		SensitiveEngine:         "auto",
 		SensitiveLongtail:       "sampled",
+		SensitiveMatchMode:      "all",
 		SensitiveWindowBytes:    4096,
 		ContentReadMode:         "auto",
 		StreamChunkSize:         256 * 1024,
@@ -171,6 +184,7 @@ func LoadConfig() (*Config, error) {
 	scanSensitive := flag.Bool("scan-sensitive", cfg.ScanSensitive, fmt.Sprintf("Enable sensitive data scanning (default: %t).", cfg.ScanSensitive))
 	scanProcesses := flag.Bool("scan-processes", cfg.ScanProcesses, fmt.Sprintf("Enable process scanning (default: %t).", cfg.ScanProcesses))
 	collectSystemInfo := flag.Bool("collect-system-info", cfg.CollectSystemInfo, fmt.Sprintf("Collect system information (default: %t).", cfg.CollectSystemInfo))
+	checkUpdates := flag.Bool("check-updates", cfg.CheckUpdates, fmt.Sprintf("Check GitHub for newer releases on startup (default: %t).", cfg.CheckUpdates))
 	format := flag.String("format", cfg.OutputFormat, fmt.Sprintf("Output format: json (default: %s).", cfg.OutputFormat))
 	output := flag.String("output", cfg.OutputFileName, "Output file name (default: safnari-<timestamp>-<unix>.ndjson).")
 	concurrency := flag.Int("concurrency", cfg.ConcurrencyLevel, fmt.Sprintf("Concurrency level (default: %d).", cfg.ConcurrencyLevel))
@@ -180,6 +194,14 @@ func LoadConfig() (*Config, error) {
 	includes := flag.String("include", "", "Comma-separated list of include patterns (default: none).")
 	excludes := flag.String("exclude", "", "Comma-separated list of exclude patterns (default: none).")
 	maxFileSize := flag.Int64("max-file-size", cfg.MaxFileSize, fmt.Sprintf("Maximum file size to process in bytes (default: %d).", cfg.MaxFileSize))
+	contentScanMaxBytes := flag.Int64(
+		"content-scan-max-bytes",
+		cfg.ContentScanMaxBytes,
+		fmt.Sprintf(
+			"Maximum bytes to inspect for content search and sensitive scans (default: %d, 0 means unlimited).",
+			cfg.ContentScanMaxBytes,
+		),
+	)
 	maxOutputFileSize := flag.Int64("max-output-file-size", cfg.MaxOutputFileSize, fmt.Sprintf("Maximum output file size before rotation in bytes (default: %d).", cfg.MaxOutputFileSize))
 	logLevel := flag.String("log-level", cfg.LogLevel, fmt.Sprintf("Log level: debug, info, warn, error, fatal, or panic (default: %s).", cfg.LogLevel))
 	maxIO := flag.Int("max-io-per-second", cfg.MaxIOPerSecond, fmt.Sprintf("Maximum disk I/O operations per second (default: %d).", cfg.MaxIOPerSecond))
@@ -218,6 +240,9 @@ func LoadConfig() (*Config, error) {
 	fuzzyMinSize := flag.Int64("fuzzy-min-size", cfg.FuzzyMinSize, fmt.Sprintf("Minimum file size in bytes for fuzzy hashing (default: %d).", cfg.FuzzyMinSize))
 	fuzzyMaxSize := flag.Int64("fuzzy-max-size", cfg.FuzzyMaxSize, fmt.Sprintf("Maximum file size in bytes for fuzzy hashing (default: %d).", cfg.FuzzyMaxSize))
 	deltaScan := flag.Bool("delta-scan", cfg.DeltaScan, fmt.Sprintf("Only scan files modified since the last run (default: %t).", cfg.DeltaScan))
+	deltaCacheMode := flag.String("delta-cache-mode", cfg.DeltaCacheMode, fmt.Sprintf("Delta cache mode: chunk or mtime (default: %s).", cfg.DeltaCacheMode))
+	deltaCacheDir := flag.String("delta-cache-dir", cfg.DeltaCacheDir, fmt.Sprintf("Persistent delta cache directory (default: %s).", cfg.DeltaCacheDir))
+	deltaCacheMaxBytes := flag.Int64("delta-cache-max-bytes", cfg.DeltaCacheMaxBytes, fmt.Sprintf("Maximum on-disk bytes used by the delta cache (default: %d).", cfg.DeltaCacheMaxBytes))
 	lastScanFile := flag.String("last-scan-file", cfg.LastScanFile, fmt.Sprintf("Path to timestamp file for delta scans (default: %s).", cfg.LastScanFile))
 	lastScanTime := flag.String("last-scan", cfg.LastScanTime, "Timestamp of last scan in RFC3339 format (default: none).")
 	redactSensitive := flag.String("redact-sensitive", cfg.RedactSensitive, "Redact sensitive data in output: mask or hash (default: none).")
@@ -257,6 +282,11 @@ func LoadConfig() (*Config, error) {
 		"sensitive-longtail",
 		cfg.SensitiveLongtail,
 		"Long-tail sensitive pattern handling: off, sampled, or full (default: sampled).",
+	)
+	sensitiveMatchMode := flag.String(
+		"sensitive-match-mode",
+		cfg.SensitiveMatchMode,
+		"Sensitive match capture mode: all or first (default: all).",
 	)
 	sensitiveWindowBytes := flag.Int(
 		"sensitive-window-bytes",
@@ -327,6 +357,8 @@ func LoadConfig() (*Config, error) {
 			cfg.ScanProcesses = *scanProcesses
 		case "collect-system-info":
 			cfg.CollectSystemInfo = *collectSystemInfo
+		case "check-updates":
+			cfg.CheckUpdates = *checkUpdates
 		case "format":
 			cfg.OutputFormat = strings.ToLower(*format)
 		case "output":
@@ -346,6 +378,8 @@ func LoadConfig() (*Config, error) {
 			cfg.ExcludePatterns = parseCommaSeparated(*excludes)
 		case "max-file-size":
 			cfg.MaxFileSize = *maxFileSize
+		case "content-scan-max-bytes":
+			cfg.ContentScanMaxBytes = *contentScanMaxBytes
 		case "max-output-file-size":
 			cfg.MaxOutputFileSize = *maxOutputFileSize
 		case "log-level":
@@ -371,6 +405,12 @@ func LoadConfig() (*Config, error) {
 			cfg.FuzzyMaxSize = *fuzzyMaxSize
 		case "delta-scan":
 			cfg.DeltaScan = *deltaScan
+		case "delta-cache-mode":
+			cfg.DeltaCacheMode = strings.ToLower(strings.TrimSpace(*deltaCacheMode))
+		case "delta-cache-dir":
+			cfg.DeltaCacheDir = strings.TrimSpace(*deltaCacheDir)
+		case "delta-cache-max-bytes":
+			cfg.DeltaCacheMaxBytes = *deltaCacheMaxBytes
 		case "last-scan-file":
 			cfg.LastScanFile = *lastScanFile
 		case "last-scan":
@@ -419,6 +459,8 @@ func LoadConfig() (*Config, error) {
 			cfg.SensitiveEngine = strings.ToLower(strings.TrimSpace(*sensitiveEngine))
 		case "sensitive-longtail":
 			cfg.SensitiveLongtail = strings.ToLower(strings.TrimSpace(*sensitiveLongtail))
+		case "sensitive-match-mode":
+			cfg.SensitiveMatchMode = strings.ToLower(strings.TrimSpace(*sensitiveMatchMode))
 		case "sensitive-window-bytes":
 			cfg.SensitiveWindowBytes = *sensitiveWindowBytes
 		case "content-read-mode":
@@ -470,6 +512,7 @@ func LoadConfig() (*Config, error) {
 	cfg.PerfProfile = strings.ToLower(strings.TrimSpace(cfg.PerfProfile))
 	cfg.SensitiveEngine = strings.ToLower(strings.TrimSpace(cfg.SensitiveEngine))
 	cfg.SensitiveLongtail = strings.ToLower(strings.TrimSpace(cfg.SensitiveLongtail))
+	cfg.SensitiveMatchMode = strings.ToLower(strings.TrimSpace(cfg.SensitiveMatchMode))
 	cfg.ContentReadMode = strings.ToLower(strings.TrimSpace(cfg.ContentReadMode))
 	cfg.JSONLayout = strings.ToLower(strings.TrimSpace(cfg.JSONLayout))
 	if cfg.RedactSensitive == "none" {
@@ -484,8 +527,17 @@ func LoadConfig() (*Config, error) {
 	if cfg.SensitiveLongtail == "" {
 		cfg.SensitiveLongtail = "sampled"
 	}
+	if cfg.SensitiveMatchMode == "" {
+		cfg.SensitiveMatchMode = "all"
+	}
 	if cfg.ContentReadMode == "" {
 		cfg.ContentReadMode = "auto"
+	}
+	if cfg.DeltaCacheMode == "" {
+		cfg.DeltaCacheMode = "chunk"
+	}
+	if cfg.DeltaCacheDir == "" {
+		cfg.DeltaCacheDir = defaultDeltaCacheDir()
 	}
 	if cfg.SensitiveWindowBytes <= 0 {
 		cfg.SensitiveWindowBytes = 4096
@@ -579,11 +631,20 @@ func (cfg *Config) validate() error {
 	if strings.TrimSpace(cfg.SensitiveLongtail) == "" {
 		cfg.SensitiveLongtail = "sampled"
 	}
+	if strings.TrimSpace(cfg.SensitiveMatchMode) == "" {
+		cfg.SensitiveMatchMode = "all"
+	}
 	if strings.TrimSpace(cfg.ContentReadMode) == "" {
 		cfg.ContentReadMode = "auto"
 	}
 	if strings.TrimSpace(cfg.JSONLayout) == "" {
 		cfg.JSONLayout = "ndjson"
+	}
+	if strings.TrimSpace(cfg.DeltaCacheMode) == "" {
+		cfg.DeltaCacheMode = "chunk"
+	}
+	if strings.TrimSpace(cfg.DeltaCacheDir) == "" {
+		cfg.DeltaCacheDir = defaultDeltaCacheDir()
 	}
 	if cfg.SensitiveWindowBytes <= 0 {
 		cfg.SensitiveWindowBytes = 4096
@@ -639,8 +700,17 @@ func (cfg *Config) validate() error {
 	if cfg.SensitiveLongtail != "off" && cfg.SensitiveLongtail != "sampled" && cfg.SensitiveLongtail != "full" {
 		return fmt.Errorf("invalid sensitive-longtail value: %s", cfg.SensitiveLongtail)
 	}
+	if cfg.SensitiveMatchMode != "all" && cfg.SensitiveMatchMode != "first" {
+		return fmt.Errorf("invalid sensitive-match-mode value: %s", cfg.SensitiveMatchMode)
+	}
 	if cfg.ContentReadMode != "stream" && cfg.ContentReadMode != "mmap" && cfg.ContentReadMode != "auto" {
 		return fmt.Errorf("invalid content-read-mode value: %s", cfg.ContentReadMode)
+	}
+	if cfg.DeltaCacheMode != "chunk" && cfg.DeltaCacheMode != "mtime" {
+		return fmt.Errorf("invalid delta-cache-mode value: %s", cfg.DeltaCacheMode)
+	}
+	if cfg.DeltaCacheMaxBytes < 0 {
+		return fmt.Errorf("delta-cache-max-bytes must be zero or positive")
 	}
 	if cfg.JSONLayout != "ndjson" {
 		return fmt.Errorf("invalid json-layout value: %s", cfg.JSONLayout)
@@ -689,6 +759,9 @@ func (cfg *Config) validate() error {
 	if cfg.MetadataMaxBytes < 0 {
 		return fmt.Errorf("metadata-max-bytes must be zero or positive")
 	}
+	if cfg.ContentScanMaxBytes < 0 {
+		return fmt.Errorf("content-scan-max-bytes must be zero or positive")
+	}
 	if cfg.ConcurrencyLevel <= 0 {
 		return fmt.Errorf("concurrency level must be positive")
 	}
@@ -731,6 +804,14 @@ func parseCustomPatterns(input string) map[string]string {
 		return map[string]string{}
 	}
 	return patterns
+}
+
+func defaultDeltaCacheDir() string {
+	base, err := os.UserCacheDir()
+	if err != nil || strings.TrimSpace(base) == "" {
+		return ".safnari-cache/delta-cache"
+	}
+	return filepath.Join(base, "safnari", "delta-cache")
 }
 
 func parseHeaders(input string) map[string]string {

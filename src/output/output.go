@@ -2,6 +2,7 @@ package output
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -30,17 +31,29 @@ type ndjsonRecord struct {
 	Payload       any    `json:"payload,omitempty"`
 }
 
+type writeRequest struct {
+	payload any
+}
+
 type Writer struct {
-	file    *os.File
-	buf     *bufio.Writer
-	mu      sync.Mutex
-	metrics *Metrics
-	cfg     *config.Config
-	sysInfo *systeminfo.SystemInfo
-	otel    *otelLogger
-	base    string
-	ext     string
-	index   int
+	file     *os.File
+	buf      *bufio.Writer
+	mu       sync.Mutex
+	closed   bool
+	writeErr error
+	metrics  *Metrics
+	cfg      *config.Config
+	sysInfo  *systeminfo.SystemInfo
+	otel     *otelLogger
+	base     string
+	ext      string
+	index    int
+
+	queue     chan writeRequest
+	stopSends chan struct{}
+	stopOnce  sync.Once
+	writerWG  sync.WaitGroup
+	enqueueWG sync.WaitGroup
 
 	bytesWritten     int64
 	recordsSinceSync int
@@ -52,6 +65,12 @@ type Writer struct {
 const (
 	flushEveryRecords = 64
 	flushMaxInterval  = 500 * time.Millisecond
+	writerQueueDepth  = 256
+)
+
+var (
+	errWriterClosed             = errors.New("writer is closed")
+	errWriterQueueUninitialized = errors.New("writer queue is not initialized")
 )
 
 func New(cfg *config.Config, sysInfo *systeminfo.SystemInfo, m *Metrics) (*Writer, error) {
@@ -85,7 +104,11 @@ func New(cfg *config.Config, sysInfo *systeminfo.SystemInfo, m *Metrics) (*Write
 	if err := w.openFile(); err != nil {
 		return nil, err
 	}
-	w.emitInitialRecords()
+	if err := w.emitInitialRecords(); err != nil {
+		_ = w.closeFile()
+		return nil, err
+	}
+	w.startAsyncWriter()
 	if m != nil {
 		m.TotalProcesses = len(sysInfo.RunningProcesses)
 		w.filesScanned.Store(int64(m.FilesScanned))
@@ -131,25 +154,34 @@ func (w *Writer) writeRecord(recordType string, payload any) error {
 	return err
 }
 
-func (w *Writer) WriteData(data any) {
+func (w *Writer) WriteData(data any) error {
+	if err := w.currentWriteErr(); err != nil {
+		return err
+	}
 	w.mu.Lock()
-	defer w.mu.Unlock()
-
-	if err := w.writeRecord("file", data); err != nil {
-		return
+	if w.closed {
+		w.mu.Unlock()
+		return errWriterClosed
 	}
-	w.filesProcessed.Add(1)
-	w.emitRecordLocked("file", data)
-
-	w.recordsSinceSync++
-	if w.shouldSync() {
-		w.flush()
-		w.recordsSinceSync = 0
-		w.lastSyncAt = time.Now()
+	queue := w.queue
+	stopSends := w.stopSends
+	// Close waits on enqueueWG before closing the queue so accepted sends are
+	// never dropped during shutdown.
+	w.enqueueWG.Add(1)
+	w.mu.Unlock()
+	defer w.enqueueWG.Done()
+	if queue == nil {
+		return errWriterQueueUninitialized
 	}
 
-	if w.cfg.MaxOutputFileSize > 0 && w.bytesWritten >= w.cfg.MaxOutputFileSize {
-		w.rotate()
+	select {
+	case queue <- writeRequest{payload: data}:
+		return w.currentWriteErr()
+	case <-stopSends:
+		if err := w.currentWriteErr(); err != nil {
+			return err
+		}
+		return errWriterClosed
 	}
 }
 
@@ -165,58 +197,108 @@ func (w *Writer) IncrementScanned() {
 	w.filesScanned.Add(1)
 }
 
-func (w *Writer) Close() {
+func (w *Writer) Close() error {
+	w.mu.Lock()
+	if w.closed {
+		w.mu.Unlock()
+		return nil
+	}
+	w.closed = true
+	queue := w.queue
+	w.mu.Unlock()
+
+	// Stop accepting new producers first, then wait for in-flight sends to
+	// either enqueue or observe shutdown before closing the queue.
+	w.signalStopSends()
+	w.enqueueWG.Wait()
+
+	if queue != nil {
+		close(queue)
+		w.writerWG.Wait()
+	}
+
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	w.syncMetricCountersLocked()
-	w.emitMetricsLocked()
-	w.closeFile()
+	var closeErr error
+	if err := w.emitMetricsLocked(); err != nil {
+		closeErr = errors.Join(closeErr, err)
+	}
+	if err := w.closeFile(); err != nil {
+		closeErr = errors.Join(closeErr, err)
+	}
 	if w.otel != nil {
 		w.otel.Shutdown()
 	}
+	return errors.Join(closeErr, w.writeErr)
 }
 
-func (w *Writer) rotate() {
-	w.closeFile()
+func (w *Writer) rotate() error {
+	if err := w.closeFile(); err != nil {
+		return err
+	}
 	w.index++
-	_ = w.openFile()
+	return w.openFile()
 }
 
-func (w *Writer) closeFile() {
-	w.flush()
-	_ = w.file.Sync()
-	_ = w.file.Close()
+func (w *Writer) closeFile() error {
+	var closeErr error
+	if err := w.flush(); err != nil {
+		closeErr = errors.Join(closeErr, err)
+	}
+	if w.file != nil {
+		if err := w.file.Sync(); err != nil {
+			closeErr = errors.Join(closeErr, err)
+		}
+		if err := w.file.Close(); err != nil {
+			closeErr = errors.Join(closeErr, err)
+		}
+		w.file = nil
+	}
+	w.buf = nil
+	return closeErr
 }
 
-func (w *Writer) flush() {
+func (w *Writer) flush() error {
 	if w.buf != nil {
-		_ = w.buf.Flush()
+		if err := w.buf.Flush(); err != nil {
+			return err
+		}
 	}
+	return nil
 }
 
-func (w *Writer) emitInitialRecords() {
+func (w *Writer) emitInitialRecords() error {
 	if w.sysInfo == nil {
-		return
+		return nil
 	}
-	_ = w.writeRecord("system_info", w.sysInfo)
-	w.emitRecordLocked("system_info", w.sysInfo)
+	if err := w.writeRecord("system_info", w.sysInfo); err != nil {
+		return err
+	}
+	w.emitRecord("system_info", w.sysInfo)
 	for i := range w.sysInfo.RunningProcesses {
 		proc := w.sysInfo.RunningProcesses[i]
-		_ = w.writeRecord("process", &proc)
-		w.emitRecordLocked("process", &proc)
+		if err := w.writeRecord("process", &proc); err != nil {
+			return err
+		}
+		w.emitRecord("process", &proc)
 	}
+	return nil
 }
 
-func (w *Writer) emitMetricsLocked() {
+func (w *Writer) emitMetricsLocked() error {
 	if w.metrics == nil {
-		return
+		return nil
 	}
 	w.syncMetricCountersLocked()
-	_ = w.writeRecord("metrics", w.metrics)
-	w.emitRecordLocked("metrics", w.metrics)
+	if err := w.writeRecord("metrics", w.metrics); err != nil {
+		return err
+	}
+	w.emitRecord("metrics", w.metrics)
+	return nil
 }
 
-func (w *Writer) emitRecordLocked(recordType string, payload interface{}) {
+func (w *Writer) emitRecord(recordType string, payload interface{}) {
 	if w.otel == nil {
 		return
 	}
@@ -247,4 +329,75 @@ func (w *Writer) syncMetricCountersLocked() {
 	}
 	w.metrics.FilesScanned = int(w.filesScanned.Load())
 	w.metrics.FilesProcessed = int(w.filesProcessed.Load())
+}
+
+func (w *Writer) startAsyncWriter() {
+	w.mu.Lock()
+	if w.queue != nil {
+		w.mu.Unlock()
+		return
+	}
+	w.queue = make(chan writeRequest, writerQueueDepth)
+	w.stopSends = make(chan struct{})
+	queue := w.queue
+	w.writerWG.Add(1)
+	w.mu.Unlock()
+
+	go func() {
+		defer w.writerWG.Done()
+		for req := range queue {
+			if err := w.currentWriteErr(); err != nil {
+				continue
+			}
+			if err := w.writeRecord("file", req.payload); err != nil {
+				w.setWriteErr(err)
+				continue
+			}
+			w.filesProcessed.Add(1)
+			w.emitRecord("file", req.payload)
+
+			w.recordsSinceSync++
+			if w.shouldSync() {
+				if err := w.flush(); err != nil {
+					w.setWriteErr(err)
+					continue
+				}
+				w.recordsSinceSync = 0
+				w.lastSyncAt = time.Now()
+			}
+
+			if w.cfg.MaxOutputFileSize > 0 && w.bytesWritten >= w.cfg.MaxOutputFileSize {
+				if err := w.rotate(); err != nil {
+					w.setWriteErr(err)
+					continue
+				}
+			}
+		}
+	}()
+}
+
+func (w *Writer) setWriteErr(err error) {
+	if err == nil {
+		return
+	}
+	w.mu.Lock()
+	if w.writeErr == nil {
+		w.writeErr = err
+	}
+	w.mu.Unlock()
+	w.signalStopSends()
+}
+
+func (w *Writer) signalStopSends() {
+	w.stopOnce.Do(func() {
+		if w.stopSends != nil {
+			close(w.stopSends)
+		}
+	})
+}
+
+func (w *Writer) currentWriteErr() error {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.writeErr
 }

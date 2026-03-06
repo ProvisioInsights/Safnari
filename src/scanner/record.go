@@ -25,6 +25,9 @@ type FileRecord struct {
 	SensitiveDataMatchCounts map[string]int         `json:"sensitive_data_match_counts,omitempty"`
 	SensitiveDataTruncated   bool                   `json:"sensitive_data_truncated,omitempty"`
 	SearchHits               map[string]int         `json:"search_hits,omitempty"`
+	ContentScanBytes         int64                  `json:"content_scan_bytes,omitempty"`
+	ContentScanTruncated     bool                   `json:"content_scan_truncated,omitempty"`
+	CollectionWarnings       []string               `json:"collection_warnings,omitempty"`
 }
 
 func (r *FileRecord) HasSignalData() bool {
@@ -36,5 +39,7 @@ func (r *FileRecord) HasSignalData() bool {
 		len(r.FuzzyHashes) > 0 ||
 		len(r.Xattrs) > 0 ||
 		r.ACL != "" ||
-		len(r.AlternateDataStreams) > 0
+		len(r.AlternateDataStreams) > 0 ||
+		r.ContentScanTruncated ||
+		len(r.CollectionWarnings) > 0
 }

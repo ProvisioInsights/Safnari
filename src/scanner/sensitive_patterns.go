@@ -36,10 +36,8 @@ func GetPatterns(types []string, custom map[string]string, exclude []string) map
 
 	selected := make(map[string]bool)
 	if len(types) == 0 {
-		if len(exclude) > 0 {
-			for name := range available {
-				selected[name] = true
-			}
+		for name := range available {
+			selected[name] = true
 		}
 	} else {
 		for _, t := range types {

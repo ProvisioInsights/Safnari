@@ -45,3 +45,11 @@ func TestComputeHashes(t *testing.T) {
 		t.Errorf("unexpected hash for unknown algorithm")
 	}
 }
+
+func TestSetSumNil(t *testing.T) {
+	var set *Set
+	hashes := set.Sum()
+	if len(hashes) != 0 {
+		t.Fatalf("expected nil set sum to be empty, got %v", hashes)
+	}
+}

@@ -194,6 +194,9 @@ func sanitizePayload(recordType string, payload interface{}, policy otelPolicy) 
 		if osVersion := getFieldValue(data, "os_version"); osVersion != nil {
 			sanitized["os_version"] = osVersion
 		}
+		if warnings := getFieldValue(data, "collection_warnings"); warnings != nil {
+			sanitized["collection_warnings"] = warnings
+		}
 		addSliceCount(sanitized, "installed_patches_count", getFieldValue(data, "installed_patches"))
 		addSliceCount(sanitized, "startup_programs_count", getFieldValue(data, "startup_programs"))
 		addSliceCount(sanitized, "installed_apps_count", getFieldValue(data, "installed_apps"))

@@ -27,11 +27,27 @@ func gatherOSVersion(sysInfo *SystemInfo) error {
 
 func gatherInstalledPatches(sysInfo *SystemInfo) error {
 	out, err := runCommandOutput("wmic", "qfe", "get", "HotFixID")
-	if err != nil {
-		return fmt.Errorf("failed to get installed patches: %v", err)
+	if err == nil {
+		lines := strings.Split(string(out), "\n")
+		for _, line := range lines[1:] {
+			patch := strings.TrimSpace(line)
+			if patch != "" {
+				sysInfo.InstalledPatches = append(sysInfo.InstalledPatches, patch)
+			}
+		}
+		return nil
 	}
-	lines := strings.Split(string(out), "\n")
-	for _, line := range lines[1:] {
+
+	out, psErr := runCommandOutput(
+		"powershell",
+		"-NoProfile",
+		"-Command",
+		"Get-HotFix | Select-Object -ExpandProperty HotFixID",
+	)
+	if psErr != nil {
+		return fmt.Errorf("failed to get installed patches: wmic: %v; powershell: %v", err, psErr)
+	}
+	for _, line := range strings.Split(string(out), "\n") {
 		patch := strings.TrimSpace(line)
 		if patch != "" {
 			sysInfo.InstalledPatches = append(sysInfo.InstalledPatches, patch)

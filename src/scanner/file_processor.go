@@ -23,8 +23,8 @@ import (
 	"github.com/h2non/filetype"
 )
 
-func ProcessFile(ctx context.Context, path string, cfg *config.Config, w *output.Writer, sensitivePatterns map[string]*regexp.Regexp) {
-	processFile(ctx, path, nil, cfg, w, sensitivePatterns, nil, true)
+func ProcessFile(ctx context.Context, path string, cfg *config.Config, w *output.Writer, sensitivePatterns map[string]*regexp.Regexp) error {
+	return processFile(ctx, path, nil, cfg, w, sensitivePatterns, nil, nil, true)
 }
 
 func processFile(
@@ -35,52 +35,54 @@ func processFile(
 	w *output.Writer,
 	sensitivePatterns map[string]*regexp.Regexp,
 	modules []FileModule,
+	deltaCache *DeltaChunkCache,
 	enforcePathWithin bool,
-) {
+) error {
 	ctx, endTask := tracing.StartTask(ctx, "process_file")
 	tracing.Log(ctx, "file", path)
 	defer endTask()
 
 	select {
 	case <-ctx.Done():
-		return
+		return ctx.Err()
 	default:
 	}
 	if enforcePathWithin && !utils.IsPathWithin(path, cfg.StartPaths) {
 		logger.Warnf("Skipping file outside target paths: %s", path)
-		return
+		return nil
 	}
 
 	if fileInfo == nil {
 		fi, err := os.Stat(path)
 		if err != nil {
 			logger.Warnf("Failed to stat file %s: %v", path, err)
-			return
+			return nil
 		}
 		fileInfo = fi
 	}
 
 	if fileInfo.IsDir() {
-		return
-	}
-
-	if cfg.MaxFileSize > 0 && fileInfo.Size() > cfg.MaxFileSize {
-		logger.Debugf("Skipping large file %s", path)
-		return
+		return nil
 	}
 
 	w.IncrementScanned()
 
 	endRegion := tracing.StartRegion(ctx, "collect_file_data")
-	fileData, err := collectFileData(ctx, path, fileInfo, cfg, sensitivePatterns, modules)
+	fileData, err := collectFileData(ctx, path, fileInfo, cfg, sensitivePatterns, modules, deltaCache)
 	endRegion()
 	if err != nil {
+		if errors.Is(err, context.Canceled) {
+			return err
+		}
 		logger.Warnf("Failed to process file %s: %v", path, err)
-		return
+		return nil
 	}
 	if shouldWriteFileData(cfg, fileData) {
-		w.WriteData(fileData)
+		if err := w.WriteData(fileData); err != nil {
+			return fmt.Errorf("write file record %s: %w", path, err)
+		}
 	}
+	return nil
 }
 
 func collectFileData(
@@ -90,6 +92,7 @@ func collectFileData(
 	cfg *config.Config,
 	sensitivePatterns map[string]*regexp.Regexp,
 	modules []FileModule,
+	deltaCache *DeltaChunkCache,
 ) (*FileRecord, error) {
 	data := &FileRecord{Path: path}
 
@@ -98,7 +101,11 @@ func collectFileData(
 		Info:              fileInfo,
 		Cfg:               cfg,
 		SensitivePatterns: sensitivePatterns,
+		deltaCache:        deltaCache,
 	}
+	defer func() {
+		_ = fc.Close()
+	}()
 	if len(modules) == 0 {
 		modules = buildFileModules(cfg, sensitivePatterns)
 	}
@@ -113,6 +120,7 @@ func collectFileData(
 			logger.Debugf("Module %s failed for %s: %v", module.Name(), path, err)
 		}
 	}
+	fc.applyRecordState(data)
 
 	return data, nil
 }
@@ -164,7 +172,11 @@ func getMimeType(path string) (string, error) {
 		return "", err
 	}
 
-	kind, err := filetype.Match(buf)
+	return detectMimeTypeFromSample(buf)
+}
+
+func detectMimeTypeFromSample(sample []byte) (string, error) {
+	kind, err := filetype.Match(sample)
 	if err != nil {
 		return "", err
 	}
@@ -175,6 +187,10 @@ func getMimeType(path string) (string, error) {
 }
 
 func shouldSearchContent(mimeType, path string) bool {
+	return shouldSearchContentWithSample(mimeType, path, nil)
+}
+
+func shouldSearchContentWithSample(mimeType, path string, sample []byte) bool {
 	if hasLikelyTextExtension(path) {
 		return true
 	}
@@ -186,6 +202,9 @@ func shouldSearchContent(mimeType, path string) bool {
 		return true
 	}
 	if mimeType == "unknown" || mimeType == "application/octet-stream" {
+		if len(sample) > 0 {
+			return looksLikeText(sample)
+		}
 		return isLikelyText(path)
 	}
 	return false

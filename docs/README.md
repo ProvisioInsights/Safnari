@@ -9,6 +9,7 @@ This directory contains extended documentation for Safnari.
 - [Usage](#usage)
 - [Configuration](#configuration)
 - [Examples](#examples)
+- [Performance Guide](#performance-guide)
 
 ## Overview
 
@@ -69,9 +70,18 @@ Generate baseline benchmarks and profile-guided optimization (PGO) inputs with:
 ```sh
 make bench-ultra
 make bench-gate
+make bench-gate BASELINE=artifacts/bench/<before-dir> CANDIDATE=artifacts/bench/<after-dir>
+make bench-compare BASELINE=artifacts/bench/<before-dir> CANDIDATE=artifacts/bench/<after-dir>
 make profile-generate
 make build-pgo-ultra
 ```
+
+`make bench-ultra` writes a timestamped artifact directory under `artifacts/bench/`
+that includes raw benchmark outputs, repeated sample runs, and a generated summary
+report. Use `make bench-compare` with two artifact directories to generate a
+before/after `benchstat` comparison for performance-focused changes. Supplying
+both `BASELINE` and `CANDIDATE` to `make bench-gate` enables artifact-compare
+mode for threshold enforcement against a known baseline.
 
 Run periodic escape-analysis snapshots when tuning allocations:
 
@@ -88,9 +98,8 @@ Run the compiled binary with desired flags. Running with `-h` prints all options
 ./bin/safnari-$(go env GOOS)-$(go env GOARCH) --help
 ```
 
-Use `--version` to display the current version. On startup Safnari checks the latest
-GitHub release and logs a message if a newer version, including any security fixes,
-is available.
+Use `--version` to display the current version. Safnari only checks GitHub for newer
+releases when `--check-updates` is enabled.
 
 ## Configuration
 
@@ -99,9 +108,10 @@ Safnari accepts the following flags. Each description lists the default value in
 - `--path`: Comma-separated list of start paths to scan (default: `.`).
 - `--all-drives`: Scan all local drives (Windows only) (default: `false`).
 - `--scan-files`: Enable file scanning (default: `true`).
-- `--scan-sensitive`: Enable sensitive data scanning (default: `true`).
-- `--scan-processes`: Enable process scanning (default: `true`).
-- `--collect-system-info`: Collect system information (default: `true`).
+- `--scan-sensitive`: Enable sensitive data scanning (default: `false`).
+- `--scan-processes`: Enable process scanning (default: `false`).
+- `--collect-system-info`: Collect system information (default: `false`).
+- `--check-updates`: Check GitHub for newer releases on startup (default: `false`).
 - `--format`: Output format: json (default: `json`).
 - `--output`: Output file name (default: `safnari-<timestamp>-<unix>.ndjson`).
 - `--concurrency`: Concurrency level (default: number of logical CPUs; effective value is adjusted
@@ -113,7 +123,8 @@ Safnari accepts the following flags. Each description lists the default value in
   (default: `mask`). Use `none` to disable.
 - `--include`: Comma-separated list of include patterns (default: none).
 - `--exclude`: Comma-separated list of exclude patterns (default: none).
-- `--max-file-size`: Maximum file size to process in bytes (default: `10485760`).
+- `--max-file-size`: Maximum file size for full-file operations such as hashing and deep metadata extraction in bytes (default: `10485760`).
+- `--content-scan-max-bytes`: Maximum bytes to inspect for search and sensitive scans (default: `10485760`; `0` means unlimited).
 - `--max-output-file-size`: Maximum output file size before rotation in bytes
   (default: `104857600`).
 - `--log-level`: Log level: debug, info, warn, error, fatal, or panic (default: `info`).
@@ -123,7 +134,8 @@ Safnari accepts the following flags. Each description lists the default value in
 - `--extended-process-info`: Gather extended process information (requires
   elevated privileges) (default: `false`).
 - `--include-sensitive-data-types`: Comma-separated list of sensitive data types
-  to include when scanning. Use `all` to include all built-in patterns (default: none).
+  to include when scanning. When omitted, Safnari scans all built-in and custom patterns
+  once `--scan-sensitive` is enabled.
 - `--exclude-sensitive-data-types`: Comma-separated list of sensitive data types
   to skip when scanning (default: none).
 - `--custom-patterns`: Custom sensitive data patterns as a JSON object mapping
@@ -134,10 +146,16 @@ Safnari accepts the following flags. Each description lists the default value in
 - `--fuzzy-min-size`: Minimum file size in bytes for fuzzy hashing (default: `256`).
 - `--fuzzy-max-size`: Maximum file size in bytes for fuzzy hashing (default: `20971520`).
 - `--delta-scan`: Only scan files modified since the last run (default: `false`).
+- `--delta-cache-mode`: Delta cache strategy: `chunk` or `mtime` (default: `chunk`).
+- `--delta-cache-dir`: Persistent delta cache directory (default:
+  `${os.UserCacheDir()}/safnari/delta-cache`).
+- `--delta-cache-max-bytes`: Maximum on-disk delta cache size in bytes (default:
+  `1073741824`).
 - `--last-scan-file`: Path to timestamp file for delta scans (default: `.safnari_last_scan`).
 - `--last-scan`: Timestamp of last scan in RFC3339 format (e.g.,
   `2006-01-02T15:04:05Z`) (default: none).
 - `--skip-count`: Skip initial file counting to start scanning immediately (default: `true`).
+- `--sensitive-match-mode`: Sensitive capture mode: `all` or `first` (default: `all`).
 - `--collect-xattrs`: Collect extended attributes (default: `true`).
 - `--xattr-max-value-size`: Max bytes of xattr values to capture (default: `1024`).
 - `--collect-acl`: Collect ACLs (default: `true`).
@@ -188,8 +206,21 @@ If only `--exclude-sensitive-data-types` is provided, Safnari scans all built-in
 patterns except those excluded. When both include and exclude flags are set, the
 exclusion list removes types from the inclusion list.
 
+Use `--sensitive-match-mode first` when you only need per-file presence signals.
+Safnari retains the first match per type, marks `sensitive_data_truncated`, and
+adds a collection warning so the reduced capture mode is explicit.
+
 Safnari writes NDJSON only. Each line is a schema v2 record with `record_type`,
 `schema_version`, and `payload`.
+
+When content inspection is capped by `--content-scan-max-bytes`, file records include
+`content_scan_bytes`, `content_scan_truncated`, and `collection_warnings` so partial
+inspection is explicit instead of silent.
+
+When `--delta-cache-mode chunk` is enabled, Safnari automatically falls back to the
+plain streaming path for small changed files that still require authoritative
+full-file hashes. That keeps delta bookkeeping from regressing the simpler mtime
+path on small-file workloads.
 
 Metrics include start/end timestamps, total files discovered, files scanned, files written to the
 output, and total running processes.
@@ -216,7 +247,7 @@ be disabled with the listed flags.
 | File times (create/access/change) | Yes | Yes | Yes | `--scan-files` | User |
 | File ID (inode/volume+file index) | Yes | Yes | Yes | `--scan-files` | User |
 | Xattrs | Yes | Yes | No | `--collect-xattrs`, `--xattr-max-value-size` | User |
-| ACLs | No | No | Yes | `--collect-acl` | Admin for protected paths |
+| ACLs | Yes | Yes | Yes | `--collect-acl` | Admin for protected paths |
 | Alternate Data Streams | No | No | Yes | `--scan-ads` | Admin for protected paths |
 | Sensitive data scan | Yes | Yes | Yes | `--scan-sensitive`, include/exclude/custom | User |
 | Search terms | Yes | Yes | Yes | `--search` | User |
@@ -243,3 +274,9 @@ Limit concurrency and write results to a custom file:
 ```
 
 Additional guides and examples will be added here over time.
+
+## Performance Guide
+
+See [performance-architecture.md](performance-architecture.md) for benchmark
+coverage, CI gate expectations, and the before/after metrics workflow used for
+scanner performance changes.

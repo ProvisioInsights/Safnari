@@ -63,7 +63,7 @@ bench-ultra:
 	./scripts/bench/baseline.sh
 
 bench-gate:
-	./scripts/bench/gate.sh
+	BASELINE="$(BASELINE)" CANDIDATE="$(CANDIDATE)" ./scripts/bench/gate.sh
 
 bench-compare:
 	@if [ -z "$${BASELINE:-}" ] || [ -z "$${CANDIDATE:-}" ]; then \

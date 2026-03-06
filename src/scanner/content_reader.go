@@ -46,9 +46,6 @@ func readFileContentWithMode(
 		if err != nil {
 			return nil, err
 		}
-		if maxSize > 0 && info.Size() > maxSize {
-			return nil, nil
-		}
 		if info.Size() >= mmapMinSize {
 			content, err := readFileContentMmap(path, maxSize)
 			if err == nil {
@@ -66,9 +63,6 @@ func readFileContentMmap(path string, maxSize int64) ([]byte, error) {
 	info, err := os.Stat(path)
 	if err != nil {
 		return nil, err
-	}
-	if maxSize > 0 && info.Size() > maxSize {
-		return nil, nil
 	}
 
 	r, err := openMmapReader(path)
@@ -106,9 +100,6 @@ func readFileContentStream(path string, maxSize int64, chunkSize int) ([]byte, e
 
 	if maxSize > 0 {
 		stat, err := file.Stat()
-		if err == nil && stat.Size() > maxSize {
-			return nil, nil
-		}
 		if err == nil && stat.Size() > 0 {
 			capHint := stat.Size()
 			if maxSize > 0 && capHint > maxSize {
@@ -156,8 +147,8 @@ func readContentChunks(file *os.File, content []byte, chunkSize int, maxSize int
 }
 
 func clampContentMaxSize(maxSize int64) int64 {
-	if maxSize <= 0 || maxSize > maxContentScanBytes {
-		return maxContentScanBytes
+	if maxSize < 0 {
+		return defaultContentScanMaxBytes
 	}
 	return maxSize
 }

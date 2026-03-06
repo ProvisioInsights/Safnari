@@ -2,6 +2,7 @@ package metadata
 
 import (
 	"archive/zip"
+	"bytes"
 	"encoding/xml"
 	"io"
 	"maps"
@@ -14,19 +15,71 @@ import (
 
 func ExtractMetadata(path string, mimeType string, maxBytes int64) map[string]interface{} {
 	metadata := make(map[string]interface{})
+	f, err := os.Open(path)
+	if err != nil {
+		return metadata
+	}
+	defer f.Close()
+
+	info, err := f.Stat()
+	if err != nil {
+		return metadata
+	}
+	return ExtractMetadataFromFile(f, info.Size(), mimeType, path, maxBytes)
+}
+
+func ExtractMetadataFromFile(f *os.File, size int64, mimeType string, path string, maxBytes int64) map[string]interface{} {
+	metadata := make(map[string]interface{})
 
 	switch mimeType {
 	case "image/jpeg", "image/png":
-		meta := extractImageMetadata(path, maxBytes)
+		if _, err := f.Seek(0, io.SeekStart); err != nil {
+			return metadata
+		}
+		reader := io.Reader(f)
+		if maxBytes > 0 {
+			reader = io.LimitReader(f, maxBytes)
+		}
+		meta := extractImageMetadataReader(reader)
 		maps.Copy(metadata, meta)
 	case "application/pdf":
-		meta := extractPDFMetadata(path, maxBytes)
+		if maxBytes > 0 && size > maxBytes {
+			return metadata
+		}
+		if _, err := f.Seek(0, io.SeekStart); err != nil {
+			return metadata
+		}
+		meta := extractPDFMetadataReaderFile(f, path)
 		maps.Copy(metadata, meta)
 	case "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
-		meta := extractDOCXMetadata(path, maxBytes)
+		r, err := zip.NewReader(f, size)
+		if err != nil {
+			return metadata
+		}
+		meta := extractDOCXMetadataZip(r, maxBytes)
 		maps.Copy(metadata, meta)
 	default:
 		// Unsupported MIME type for metadata extraction
+	}
+
+	return metadata
+}
+
+func ExtractMetadataFromBytes(content []byte, mimeType string, path string) map[string]interface{} {
+	metadata := make(map[string]interface{})
+
+	switch mimeType {
+	case "image/jpeg", "image/png":
+		meta := extractImageMetadataReader(bytes.NewReader(content))
+		maps.Copy(metadata, meta)
+	case "application/pdf":
+		meta := extractPDFMetadataReader(content, path)
+		maps.Copy(metadata, meta)
+	case "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
+		meta := extractDOCXMetadataReader(content)
+		maps.Copy(metadata, meta)
+	default:
+		// Unsupported MIME type for metadata extraction.
 	}
 
 	return metadata
@@ -44,6 +97,10 @@ func extractImageMetadata(path string, maxBytes int64) map[string]interface{} {
 	if maxBytes > 0 {
 		reader = io.LimitReader(f, maxBytes)
 	}
+	return extractImageMetadataReader(reader)
+}
+
+func extractImageMetadataReader(reader io.Reader) map[string]interface{} {
 	x, err := exif.Decode(reader)
 	if err != nil {
 		return nil
@@ -76,7 +133,16 @@ func extractPDFMetadata(path string, maxBytes int64) map[string]interface{} {
 	}
 	defer f.Close()
 
-	info, err := api.PDFInfo(f, path, nil, false, nil)
+	return extractPDFMetadataReaderFile(f, path)
+}
+
+func extractPDFMetadataReader(content []byte, path string) map[string]interface{} {
+	reader := bytes.NewReader(content)
+	return extractPDFMetadataReaderFile(reader, path)
+}
+
+func extractPDFMetadataReaderFile(reader io.ReadSeeker, path string) map[string]interface{} {
+	info, err := api.PDFInfo(reader, path, nil, false, nil)
 	if err != nil {
 		return nil
 	}
@@ -105,6 +171,18 @@ func extractDOCXMetadata(path string, maxBytes int64) map[string]interface{} {
 	}
 	defer r.Close()
 
+	return extractDOCXMetadataZip(&r.Reader, maxBytes)
+}
+
+func extractDOCXMetadataReader(content []byte) map[string]interface{} {
+	r, err := zip.NewReader(bytes.NewReader(content), int64(len(content)))
+	if err != nil {
+		return nil
+	}
+	return extractDOCXMetadataZip(r, int64(len(content)))
+}
+
+func extractDOCXMetadataZip(r *zip.Reader, maxBytes int64) map[string]interface{} {
 	var coreFile *zip.File
 	for _, f := range r.File {
 		if f.Name == "docProps/core.xml" {

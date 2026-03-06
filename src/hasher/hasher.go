@@ -11,6 +11,8 @@ import (
 	"sync"
 
 	"safnari/logger"
+
+	"lukechampine.com/blake3"
 )
 
 const (
@@ -33,6 +35,68 @@ var hashBufferLargePool = sync.Pool{
 	},
 }
 
+type entry struct {
+	name string
+	h    hash.Hash
+}
+
+type Set struct {
+	hashers []entry
+}
+
+func NewSet(algorithms []string) *Set {
+	hashers := make([]entry, 0, len(algorithms))
+	seen := make(map[string]struct{}, len(algorithms))
+	for _, algo := range algorithms {
+		if _, ok := seen[algo]; ok {
+			continue
+		}
+		switch algo {
+		case "md5":
+			hashers = append(hashers, entry{name: "md5", h: md5.New()})
+			seen[algo] = struct{}{}
+		case "sha1":
+			hashers = append(hashers, entry{name: "sha1", h: sha1.New()})
+			seen[algo] = struct{}{}
+		case "sha256":
+			hashers = append(hashers, entry{name: "sha256", h: sha256.New()})
+			seen[algo] = struct{}{}
+		case "blake3":
+			hashers = append(hashers, entry{name: "blake3", h: blake3.New(32, nil)})
+			seen[algo] = struct{}{}
+		default:
+			logger.Warnf("Unsupported hash algorithm: %s", algo)
+		}
+	}
+	return &Set{hashers: hashers}
+}
+
+func (s *Set) Enabled() bool {
+	return s != nil && len(s.hashers) > 0
+}
+
+func (s *Set) Write(chunk []byte) {
+	if s == nil {
+		return
+	}
+	for i := range s.hashers {
+		if _, err := s.hashers[i].h.Write(chunk); err != nil {
+			logger.Warnf("Failed to update hash %s: %v", s.hashers[i].name, err)
+		}
+	}
+}
+
+func (s *Set) Sum() map[string]string {
+	if s == nil {
+		return map[string]string{}
+	}
+	hashes := make(map[string]string, len(s.hashers))
+	for i := range s.hashers {
+		hashes[s.hashers[i].name] = hex.EncodeToString(s.hashers[i].h.Sum(nil))
+	}
+	return hashes
+}
+
 func ComputeHashes(path string, algorithms []string) map[string]string {
 	hashes := make(map[string]string, len(algorithms))
 
@@ -43,32 +107,8 @@ func ComputeHashes(path string, algorithms []string) map[string]string {
 	}
 	defer file.Close()
 
-	type hasherEntry struct {
-		name string
-		h    hash.Hash
-	}
-	hashers := make([]hasherEntry, 0, len(algorithms))
-	seen := make(map[string]struct{}, len(algorithms))
-	for _, algo := range algorithms {
-		if _, ok := seen[algo]; ok {
-			continue
-		}
-		switch algo {
-		case "md5":
-			hashers = append(hashers, hasherEntry{name: "md5", h: md5.New()})
-			seen[algo] = struct{}{}
-		case "sha1":
-			hashers = append(hashers, hasherEntry{name: "sha1", h: sha1.New()})
-			seen[algo] = struct{}{}
-		case "sha256":
-			hashers = append(hashers, hasherEntry{name: "sha256", h: sha256.New()})
-			seen[algo] = struct{}{}
-		default:
-			logger.Warnf("Unsupported hash algorithm: %s", algo)
-		}
-	}
-
-	if len(hashers) > 0 {
+	set := NewSet(algorithms)
+	if set.Enabled() {
 		bufferPool := &hashBufferSmallPool
 		if info, statErr := file.Stat(); statErr == nil && info.Size() >= hashLargeBufferThreshold {
 			bufferPool = &hashBufferLargePool
@@ -78,12 +118,7 @@ func ComputeHashes(path string, algorithms []string) map[string]string {
 		for {
 			n, readErr := file.Read(buffer)
 			if n > 0 {
-				chunk := buffer[:n]
-				for i := range hashers {
-					if _, err := hashers[i].h.Write(chunk); err != nil {
-						logger.Warnf("Failed to update hash %s for %s: %v", hashers[i].name, path, err)
-					}
-				}
+				set.Write(buffer[:n])
 			}
 			if readErr != nil {
 				if readErr != io.EOF {
@@ -95,9 +130,5 @@ func ComputeHashes(path string, algorithms []string) map[string]string {
 		bufferPool.Put(bufferPtr)
 	}
 
-	for i := range hashers {
-		hashes[hashers[i].name] = hex.EncodeToString(hashers[i].h.Sum(nil))
-	}
-
-	return hashes
+	return set.Sum()
 }
