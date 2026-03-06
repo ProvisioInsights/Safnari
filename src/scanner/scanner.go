@@ -244,6 +244,9 @@ func ScanFiles(ctx context.Context, cfg *config.Config, metrics *output.Metrics,
 	wg.Wait()
 	close(progressCh)
 	progressWG.Wait()
+	if err := w.WaitIdle(); err != nil {
+		return err
+	}
 	metrics.FilesScanned = w.FilesScanned()
 	metrics.FilesProcessed = w.FilesProcessed()
 	if cfg.SkipCount {
