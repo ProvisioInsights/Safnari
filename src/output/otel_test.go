@@ -6,7 +6,7 @@ import (
 	"safnari/config"
 
 	otelLog "go.opentelemetry.io/otel/log"
-	semconv "go.opentelemetry.io/otel/semconv/v1.27.0"
+	semconv "go.opentelemetry.io/otel/semconv/v1.40.0"
 )
 
 func findAttr(kvs []otelLog.KeyValue, key string) (otelLog.Value, bool) {

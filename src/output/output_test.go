@@ -99,6 +99,34 @@ func TestWriteDataConcurrent(t *testing.T) {
 	}
 }
 
+func TestWaitIdleDrainsQueuedWrites(t *testing.T) {
+	tmp, err := os.CreateTemp("", "wait-idle*.ndjson")
+	if err != nil {
+		t.Fatalf("temp file: %v", err)
+	}
+	defer os.Remove(tmp.Name())
+
+	cfg := &config.Config{OutputFileName: tmp.Name(), OutputFormat: "json"}
+	sysInfo := &systeminfo.SystemInfo{RunningProcesses: []systeminfo.ProcessInfo{}}
+	w, err := New(cfg, sysInfo, &Metrics{})
+	if err != nil {
+		t.Fatalf("init: %v", err)
+	}
+
+	if err := w.WriteData(map[string]interface{}{"path": "queued"}); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	if err := w.WaitIdle(); err != nil {
+		t.Fatalf("wait idle: %v", err)
+	}
+	if got := w.FilesProcessed(); got != 1 {
+		t.Fatalf("expected FilesProcessed=1 after WaitIdle, got %d", got)
+	}
+	if err := w.Close(); err != nil {
+		t.Fatalf("close: %v", err)
+	}
+}
+
 func TestOutputRotation(t *testing.T) {
 	tmpDir := t.TempDir()
 	base := filepath.Join(tmpDir, "out.ndjson")

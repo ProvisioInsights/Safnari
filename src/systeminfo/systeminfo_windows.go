@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/shirou/gopsutil/v3/winservices"
+	"github.com/shirou/gopsutil/v4/winservices"
 	"golang.org/x/sys/windows/registry"
 	"golang.org/x/sys/windows/svc"
 )

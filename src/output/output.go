@@ -33,6 +33,7 @@ type ndjsonRecord struct {
 
 type writeRequest struct {
 	payload any
+	barrier chan struct{}
 }
 
 type Writer struct {
@@ -183,6 +184,40 @@ func (w *Writer) WriteData(data any) error {
 		}
 		return errWriterClosed
 	}
+}
+
+func (w *Writer) WaitIdle() error {
+	if err := w.currentWriteErr(); err != nil {
+		return err
+	}
+
+	w.mu.Lock()
+	if w.closed {
+		w.mu.Unlock()
+		return w.currentWriteErr()
+	}
+	queue := w.queue
+	stopSends := w.stopSends
+	w.enqueueWG.Add(1)
+	w.mu.Unlock()
+	defer w.enqueueWG.Done()
+
+	if queue == nil {
+		return errWriterQueueUninitialized
+	}
+
+	barrier := make(chan struct{})
+	select {
+	case queue <- writeRequest{barrier: barrier}:
+	case <-stopSends:
+		if err := w.currentWriteErr(); err != nil {
+			return err
+		}
+		return errWriterClosed
+	}
+
+	<-barrier
+	return w.currentWriteErr()
 }
 
 func (w *Writer) SetMetrics(m Metrics) {
@@ -346,6 +381,15 @@ func (w *Writer) startAsyncWriter() {
 	go func() {
 		defer w.writerWG.Done()
 		for req := range queue {
+			if req.barrier != nil {
+				if err := w.currentWriteErr(); err == nil {
+					if err := w.flush(); err != nil {
+						w.setWriteErr(err)
+					}
+				}
+				close(req.barrier)
+				continue
+			}
 			if err := w.currentWriteErr(); err != nil {
 				continue
 			}

@@ -8,8 +8,8 @@ import (
 	"safnari/config"
 	"safnari/logger"
 
-	gnet "github.com/shirou/gopsutil/v3/net"
-	"github.com/shirou/gopsutil/v3/process"
+	gnet "github.com/shirou/gopsutil/v4/net"
+	"github.com/shirou/gopsutil/v4/process"
 )
 
 type SystemInfo struct {
