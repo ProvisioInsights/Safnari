@@ -142,6 +142,7 @@ jobs:
     steps:
       - uses: actions/download-artifact@v4
         with:
+          pattern: safnari-*
           path: bin
       - uses: actions/download-artifact@v4
         with:
