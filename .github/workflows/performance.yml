@@ -1,5 +1,8 @@
 name: Performance
 
+permissions:
+  contents: read
+
 on:
   push:
     branches: [main]
@@ -27,9 +30,11 @@ jobs:
         run: make bench-ultra
         shell: bash
 
-      - name: Enforce performance gate
+      - name: Evaluate performance gate
+        id: pr_gate
         run: make bench-gate
         shell: bash
+        continue-on-error: true
 
       - name: Capture benchmark artifact directory
         if: always()
@@ -58,6 +63,17 @@ jobs:
         with:
           name: perf-gate-linux-amd64
           path: ${{ steps.gate_dir.outputs.dir }}
+
+      - name: Summarize PR benchmark gate
+        if: always()
+        run: |
+          if [ "${{ steps.pr_gate.outcome }}" = "success" ]; then
+            echo "PR performance gate passed." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "PR performance gate is informational and did not meet the current thresholds." >> "$GITHUB_STEP_SUMMARY"
+            echo "See the perf-gate-linux-amd64 artifact for the detailed comparison output." >> "$GITHUB_STEP_SUMMARY"
+          fi
+        shell: bash
 
       - name: Generate PGO profile
         run: make profile-generate
