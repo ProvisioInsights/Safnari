@@ -246,6 +246,41 @@ func TestDefaultSkipCountEnabled(t *testing.T) {
 	if !cfg.SkipCount {
 		t.Fatal("expected skip-count default to be enabled")
 	}
+	if cfg.ScanSensitive {
+		t.Fatal("expected scan-sensitive default to be disabled")
+	}
+	if cfg.ScanProcesses {
+		t.Fatal("expected scan-processes default to be disabled")
+	}
+	if cfg.CollectSystemInfo {
+		t.Fatal("expected collect-system-info default to be disabled")
+	}
+	if cfg.CheckUpdates {
+		t.Fatal("expected check-updates default to be disabled")
+	}
+	if cfg.ContentScanMaxBytes != 10*1024*1024 {
+		t.Fatalf("unexpected content-scan-max-bytes default: %d", cfg.ContentScanMaxBytes)
+	}
+}
+
+func TestCheckUpdatesAndContentScanFlags(t *testing.T) {
+	oldArgs := os.Args
+	defer func() { os.Args = oldArgs }()
+	oldFlag := flag.CommandLine
+	flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ExitOnError)
+	defer func() { flag.CommandLine = oldFlag }()
+
+	os.Args = []string{"cmd", "--check-updates", "--content-scan-max-bytes", "2048"}
+	cfg, err := LoadConfig()
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if !cfg.CheckUpdates {
+		t.Fatal("expected check-updates enabled")
+	}
+	if cfg.ContentScanMaxBytes != 2048 {
+		t.Fatalf("unexpected content-scan-max-bytes: %d", cfg.ContentScanMaxBytes)
+	}
 }
 
 func TestOptimizationFlags(t *testing.T) {
@@ -347,6 +382,7 @@ func TestOptimizationFlagValidation(t *testing.T) {
 		StreamChunkSize:         256 * 1024,
 		StreamOverlapBytes:      512,
 		JSONLayout:              "ndjson",
+		ContentScanMaxBytes:     1024,
 		AutoTune:                false,
 		DiagDir:                 ".",
 		MmapMinSize:             1024,
@@ -380,5 +416,11 @@ func TestOptimizationFlagValidation(t *testing.T) {
 	cfg.StreamOverlapBytes = cfg.StreamChunkSize
 	if err := cfg.validate(); err == nil {
 		t.Fatal("expected invalid stream-overlap-bytes error")
+	}
+
+	cfg.StreamOverlapBytes = 512
+	cfg.ContentScanMaxBytes = -1
+	if err := cfg.validate(); err == nil {
+		t.Fatal("expected invalid content-scan-max-bytes error")
 	}
 }

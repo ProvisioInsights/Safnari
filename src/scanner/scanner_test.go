@@ -2,6 +2,7 @@ package scanner
 
 import (
 	"context"
+	"encoding/json"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -176,6 +177,16 @@ func TestExcludeOnlyDefaultsToAll(t *testing.T) {
 	}
 }
 
+func TestDefaultPatternSelectionIncludesBuiltinsAndCustom(t *testing.T) {
+	patterns := GetPatterns(nil, map[string]string{"token": "tok_[0-9]+"}, nil)
+	if _, ok := patterns["email"]; !ok {
+		t.Fatal("expected builtin sensitive patterns to be selected by default")
+	}
+	if _, ok := patterns["token"]; !ok {
+		t.Fatal("expected custom sensitive patterns to be selected by default")
+	}
+}
+
 func TestGetFileAttributes(t *testing.T) {
 	tmp, _ := os.CreateTemp("", "attr")
 	tmp.Close()
@@ -205,6 +216,66 @@ func TestCollectFileData(t *testing.T) {
 	}
 	if _, ok := data.Hashes["md5"]; !ok {
 		t.Fatalf("hash missing")
+	}
+}
+
+func TestCollectFileDataLargeFileStillInventoried(t *testing.T) {
+	tmp, _ := os.CreateTemp("", "collect-large*.txt")
+	content := strings.Repeat("x", 256)
+	tmp.WriteString(content)
+	tmp.Close()
+	defer os.Remove(tmp.Name())
+
+	fi, _ := os.Stat(tmp.Name())
+	cfg := &config.Config{
+		HashAlgorithms: []string{"md5"},
+		MaxFileSize:    32,
+		ScanFiles:      true,
+		ScanSensitive:  false,
+	}
+	data, err := collectFileData(context.Background(), tmp.Name(), fi, cfg, nil, buildFileModules(cfg, nil))
+	if err != nil {
+		t.Fatalf("collect: %v", err)
+	}
+	if data.Path != tmp.Name() || data.Size != int64(len(content)) {
+		t.Fatalf("expected baseline inventory for oversized file, got %+v", data)
+	}
+	if len(data.Hashes) != 0 {
+		t.Fatalf("expected hashes to be skipped for oversized file, got %v", data.Hashes)
+	}
+	if len(data.CollectionWarnings) == 0 {
+		t.Fatal("expected collection warning for oversized file")
+	}
+}
+
+func TestCollectFileDataMarksContentTruncation(t *testing.T) {
+	tmp, _ := os.CreateTemp("", "collect-truncated*.txt")
+	content := "alpha beta alpha gamma"
+	tmp.WriteString(content)
+	tmp.Close()
+	defer os.Remove(tmp.Name())
+
+	fi, _ := os.Stat(tmp.Name())
+	cfg := &config.Config{
+		ScanFiles:           false,
+		ScanSensitive:       false,
+		SearchTerms:         []string{"alpha"},
+		ContentScanMaxBytes: 5,
+		ContentReadMode:     "stream",
+		StreamChunkSize:     4,
+	}
+	data, err := collectFileData(context.Background(), tmp.Name(), fi, cfg, nil, buildFileModules(cfg, nil))
+	if err != nil {
+		t.Fatalf("collect: %v", err)
+	}
+	if !data.ContentScanTruncated {
+		t.Fatal("expected content scan truncation to be recorded")
+	}
+	if data.ContentScanBytes != 5 {
+		t.Fatalf("expected content scan bytes to reflect configured limit, got %d", data.ContentScanBytes)
+	}
+	if len(data.CollectionWarnings) == 0 {
+		t.Fatal("expected warning for truncated content scan")
 	}
 }
 
@@ -326,6 +397,59 @@ func TestScanFilesLastScanTime(t *testing.T) {
 	}
 	if metrics.FilesProcessed != 1 {
 		t.Fatalf("expected 1 file processed got %d", metrics.FilesProcessed)
+	}
+}
+
+func TestScanFilesSkipsInternalArtifacts(t *testing.T) {
+	dir := t.TempDir()
+	scanDir := filepath.Join(dir, "scan")
+	if err := os.Mkdir(scanDir, 0755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	samplePath := filepath.Join(scanDir, "sample.txt")
+	if err := os.WriteFile(samplePath, []byte("sample"), 0644); err != nil {
+		t.Fatalf("write sample: %v", err)
+	}
+	outPath := filepath.Join(scanDir, "out.ndjson")
+	lastScanPath := filepath.Join(scanDir, ".safnari_last_scan")
+
+	cfg := &config.Config{
+		StartPaths:        []string{scanDir},
+		OutputFileName:    outPath,
+		LastScanFile:      lastScanPath,
+		DiagDir:           scanDir,
+		NiceLevel:         "low",
+		MaxIOPerSecond:    1000,
+		ScanFiles:         true,
+		ScanSensitive:     false,
+		ScanProcesses:     false,
+		CollectSystemInfo: false,
+	}
+	sys := &systeminfo.SystemInfo{RunningProcesses: []systeminfo.ProcessInfo{}}
+	metrics := &output.Metrics{}
+	w, err := output.New(cfg, sys, metrics)
+	if err != nil {
+		t.Fatalf("output init: %v", err)
+	}
+	defer func() { _ = w.Close() }()
+
+	if err := os.WriteFile(lastScanPath, []byte(time.Now().UTC().Format(time.RFC3339)), 0600); err != nil {
+		t.Fatalf("write last scan: %v", err)
+	}
+
+	if err := ScanFiles(context.Background(), cfg, metrics, w); err != nil {
+		t.Fatalf("scan: %v", err)
+	}
+	if err := w.Close(); err != nil {
+		t.Fatalf("close: %v", err)
+	}
+
+	records := readFileRecords(t, outPath)
+	if len(records) != 1 {
+		t.Fatalf("expected only the sample file to be recorded, got %d records", len(records))
+	}
+	if records[0].Path != samplePath {
+		t.Fatalf("unexpected recorded path: %s", records[0].Path)
 	}
 }
 
@@ -483,4 +607,29 @@ func collectWalkedFiles(t *testing.T, root string, cfg *config.Config) map[strin
 		t.Fatalf("walk failed: %v", err)
 	}
 	return files
+}
+
+func readFileRecords(t *testing.T, path string) []FileRecord {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read output: %v", err)
+	}
+	var records []FileRecord
+	for _, line := range strings.Split(strings.TrimSpace(string(data)), "\n") {
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+		var envelope struct {
+			RecordType string     `json:"record_type"`
+			Payload    FileRecord `json:"payload"`
+		}
+		if err := json.Unmarshal([]byte(line), &envelope); err != nil {
+			t.Fatalf("decode output: %v", err)
+		}
+		if envelope.RecordType == "file" {
+			records = append(records, envelope.Payload)
+		}
+	}
+	return records
 }

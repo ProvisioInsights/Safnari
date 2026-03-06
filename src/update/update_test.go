@@ -43,3 +43,35 @@ func TestCheckForUpdateNoUpdate(t *testing.T) {
 		t.Fatalf("did not expect update")
 	}
 }
+
+func TestCheckForUpdateDevBuildDoesNotEmitNotice(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"tag_name":"safnari-20260219a","body":""}`))
+	}))
+	defer ts.Close()
+
+	_, _, newer, err := checkForUpdateURL("dev", ts.URL)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if newer {
+		t.Fatal("did not expect update notice for dev build")
+	}
+}
+
+func TestCheckForUpdateDateTagsCompareInOrder(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"tag_name":"safnari-20260219b","body":""}`))
+	}))
+	defer ts.Close()
+
+	_, _, newer, err := checkForUpdateURL("safnari-20260219a", ts.URL)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !newer {
+		t.Fatal("expected newer dated release to be detected")
+	}
+}

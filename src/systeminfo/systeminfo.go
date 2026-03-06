@@ -13,18 +13,19 @@ import (
 )
 
 type SystemInfo struct {
-	OSVersion         string           `json:"os_version"`
-	InstalledPatches  []string         `json:"installed_patches"`
-	RunningProcesses  []ProcessInfo    `json:"running_processes"`
-	StartupPrograms   []string         `json:"startup_programs"`
-	InstalledApps     []string         `json:"installed_apps"`
-	NetworkInterfaces []InterfaceInfo  `json:"network_interfaces"`
-	OpenConnections   []ConnectionInfo `json:"open_connections"`
-	RunningServices   []ServiceInfo    `json:"running_services"`
-	Users             []string         `json:"users"`
-	Groups            []string         `json:"groups"`
-	Admins            []string         `json:"admins"`
-	ScheduledTasks    []string         `json:"scheduled_tasks"`
+	OSVersion          string            `json:"os_version"`
+	InstalledPatches   []string          `json:"installed_patches"`
+	RunningProcesses   []ProcessInfo     `json:"running_processes"`
+	StartupPrograms    []string          `json:"startup_programs"`
+	InstalledApps      []string          `json:"installed_apps"`
+	NetworkInterfaces  []InterfaceInfo   `json:"network_interfaces"`
+	OpenConnections    []ConnectionInfo  `json:"open_connections"`
+	RunningServices    []ServiceInfo     `json:"running_services"`
+	Users              []string          `json:"users"`
+	Groups             []string          `json:"groups"`
+	Admins             []string          `json:"admins"`
+	ScheduledTasks     []string          `json:"scheduled_tasks"`
+	CollectionWarnings map[string]string `json:"collection_warnings,omitempty"`
 }
 
 type ProcessInfo struct {
@@ -45,49 +46,60 @@ func GetSystemInfo(cfg *config.Config) (*SystemInfo, error) {
 	if cfg.CollectSystemInfo {
 		if err := gatherOSVersion(sysInfo); err != nil {
 			logger.Warnf("Failed to gather OS version: %v", err)
+			recordCollectionWarning(sysInfo, "os_version", err)
 		}
 
 		if err := gatherInstalledPatches(sysInfo); err != nil {
 			logger.Warnf("Failed to gather installed patches: %v", err)
+			recordCollectionWarning(sysInfo, "installed_patches", err)
 		}
 
 		if err := gatherStartupPrograms(sysInfo); err != nil {
 			logger.Warnf("Failed to gather startup programs: %v", err)
+			recordCollectionWarning(sysInfo, "startup_programs", err)
 		}
 
 		if err := gatherInstalledApps(sysInfo); err != nil {
 			logger.Warnf("Failed to gather installed applications: %v", err)
+			recordCollectionWarning(sysInfo, "installed_apps", err)
 		}
 
 		if err := gatherNetworkInterfaces(sysInfo); err != nil {
 			logger.Warnf("Failed to gather network interfaces: %v", err)
+			recordCollectionWarning(sysInfo, "network_interfaces", err)
 		}
 
 		if err := gatherOpenConnections(sysInfo); err != nil {
 			logger.Warnf("Failed to gather network connections: %v", err)
+			recordCollectionWarning(sysInfo, "open_connections", err)
 		}
 
 		if err := gatherRunningServices(sysInfo); err != nil {
 			logger.Warnf("Failed to gather running services: %v", err)
+			recordCollectionWarning(sysInfo, "running_services", err)
 		}
 		if cfg.CollectUsers {
 			if err := gatherUsers(sysInfo); err != nil {
 				logger.Warnf("Failed to gather users: %v", err)
+				recordCollectionWarning(sysInfo, "users", err)
 			}
 		}
 		if cfg.CollectGroups {
 			if err := gatherGroups(sysInfo); err != nil {
 				logger.Warnf("Failed to gather groups: %v", err)
+				recordCollectionWarning(sysInfo, "groups", err)
 			}
 		}
 		if cfg.CollectAdmins {
 			if err := gatherAdmins(sysInfo); err != nil {
 				logger.Warnf("Failed to gather admins: %v", err)
+				recordCollectionWarning(sysInfo, "admins", err)
 			}
 		}
 		if cfg.CollectScheduled {
 			if err := gatherScheduledTasks(sysInfo); err != nil {
 				logger.Warnf("Failed to gather scheduled tasks: %v", err)
+				recordCollectionWarning(sysInfo, "scheduled_tasks", err)
 			}
 		}
 	}
@@ -95,6 +107,7 @@ func GetSystemInfo(cfg *config.Config) (*SystemInfo, error) {
 	if cfg.ScanProcesses {
 		if err := gatherRunningProcesses(sysInfo, cfg.ExtendedProcessInfo); err != nil {
 			logger.Warnf("Failed to gather running processes: %v", err)
+			recordCollectionWarning(sysInfo, "running_processes", err)
 		}
 	}
 
@@ -198,7 +211,7 @@ func gatherNetworkInterfaces(sysInfo *SystemInfo) error {
 func gatherOpenConnections(sysInfo *SystemInfo) error {
 	conns, err := gnet.Connections("all")
 	if err != nil {
-		return nil
+		return fmt.Errorf("failed to gather network connections: %v", err)
 	}
 	for _, c := range conns {
 		connInfo := ConnectionInfo{
@@ -210,6 +223,16 @@ func gatherOpenConnections(sysInfo *SystemInfo) error {
 		sysInfo.OpenConnections = append(sysInfo.OpenConnections, connInfo)
 	}
 	return nil
+}
+
+func recordCollectionWarning(sysInfo *SystemInfo, key string, err error) {
+	if sysInfo == nil || err == nil || key == "" {
+		return
+	}
+	if sysInfo.CollectionWarnings == nil {
+		sysInfo.CollectionWarnings = make(map[string]string, 4)
+	}
+	sysInfo.CollectionWarnings[key] = err.Error()
 }
 
 // Implement gatherOSVersion, gatherInstalledPatches, gatherStartupPrograms, gatherInstalledApps as per previous implementations or stubs

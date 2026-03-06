@@ -2,6 +2,7 @@ package scanner
 
 import (
 	"context"
+	"errors"
 	"io/fs"
 	"os"
 	"runtime"
@@ -27,6 +28,8 @@ type fileScanTask struct {
 
 func ScanFiles(ctx context.Context, cfg *config.Config, metrics *output.Metrics, w *output.Writer) error {
 	applyPerformanceProfile(cfg)
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
 
 	var lastScanTime time.Time
 	if cfg.LastScanTime != "" {
@@ -58,6 +61,7 @@ func ScanFiles(ctx context.Context, cfg *config.Config, metrics *output.Metrics,
 	var bar *progressbar.ProgressBar
 
 	matcher := utils.NewPatternMatcher(cfg.IncludePatterns, cfg.ExcludePatterns)
+	artifactFilter := newInternalArtifactFilter(cfg)
 	setSIMDFastpathEnabled(cfg.SimdFastpath)
 	prefilter.SetSIMDFastpath(cfg.SimdFastpath)
 
@@ -165,14 +169,14 @@ func ScanFiles(ctx context.Context, cfg *config.Config, metrics *output.Metrics,
 				if d.IsDir() {
 					return nil
 				}
+				if artifactFilter.ShouldSkip(path) {
+					return nil
+				}
 				// Apply include/exclude filters
 				if matcher.ShouldInclude(path) {
 					info, err := d.Info()
 					if err == nil {
 						if cfg.DeltaScan && info.ModTime().Before(lastScanTime) {
-							return nil
-						}
-						if cfg.MaxFileSize > 0 && info.Size() > cfg.MaxFileSize {
 							return nil
 						}
 					}
@@ -190,13 +194,25 @@ func ScanFiles(ctx context.Context, cfg *config.Config, metrics *output.Metrics,
 				}
 				return nil
 			})
-			if err != nil {
+			if err != nil && !errors.Is(err, context.Canceled) {
 				logger.Warnf("Error walking path %s: %v", startPath, err)
 			}
 		}
 	}()
 
 	// Start worker pool
+	var firstErr error
+	var firstErrOnce sync.Once
+	setScanError := func(err error) {
+		if err == nil || errors.Is(err, context.Canceled) {
+			return
+		}
+		firstErrOnce.Do(func() {
+			firstErr = err
+			cancel()
+		})
+	}
+
 	for range cfg.ConcurrencyLevel {
 		wg.Add(1)
 		go func() {
@@ -208,7 +224,10 @@ func ScanFiles(ctx context.Context, cfg *config.Config, metrics *output.Metrics,
 				default:
 					// Continue processing
 				}
-				processFile(ctx, task.path, task.info, cfg, w, sensitivePatterns, fileModules, false)
+				if err := processFile(ctx, task.path, task.info, cfg, w, sensitivePatterns, fileModules, true); err != nil {
+					setScanError(err)
+					return
+				}
 				processedCounter.Add(1)
 				progressCh <- 1
 			}
@@ -228,6 +247,9 @@ func ScanFiles(ctx context.Context, cfg *config.Config, metrics *output.Metrics,
 			logger.Warnf("Failed to write last scan time: %v", err)
 		}
 	}
+	if firstErr != nil {
+		return firstErr
+	}
 	return nil
 }
 
@@ -237,6 +259,7 @@ func countTotalFiles(ctx context.Context, startPath string, cfg *config.Config, 
 	}
 	var total int
 	selectedWalker := selectWalker(cfg)
+	artifactFilter := newInternalArtifactFilter(cfg)
 	err := selectedWalker.Walk(ctx, startPath, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			logger.Warnf("Failed to access %s: %v", path, err)
@@ -245,13 +268,13 @@ func countTotalFiles(ctx context.Context, startPath string, cfg *config.Config, 
 		if d == nil {
 			return nil
 		}
+		if !d.IsDir() && artifactFilter.ShouldSkip(path) {
+			return nil
+		}
 		if !d.IsDir() && matcher.ShouldInclude(path) {
 			info, err := d.Info()
 			if err == nil {
 				if cfg.DeltaScan && info.ModTime().Before(lastScanTime) {
-					return nil
-				}
-				if cfg.MaxFileSize > 0 && info.Size() > cfg.MaxFileSize {
 					return nil
 				}
 			}

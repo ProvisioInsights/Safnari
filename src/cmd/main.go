@@ -54,11 +54,13 @@ func main() {
 		}
 	}
 
-	if latest, notes, newer, err := update.CheckForUpdate(version.Version); err == nil && newer {
-		if strings.Contains(strings.ToLower(notes), "security") {
-			logger.Warnf("Update available: %s -> %s (security fixes included)", version.Version, latest)
-		} else {
-			logger.Infof("Update available: %s -> %s", version.Version, latest)
+	if cfg.CheckUpdates {
+		if latest, notes, newer, err := update.CheckForUpdate(version.Version); err == nil && newer {
+			if strings.Contains(strings.ToLower(notes), "security") {
+				logger.Warnf("Update available: %s -> %s (security fixes included)", version.Version, latest)
+			} else {
+				logger.Infof("Update available: %s -> %s", version.Version, latest)
+			}
 		}
 	}
 
@@ -84,7 +86,11 @@ func main() {
 	if err != nil {
 		logger.Fatalf("Failed to initialize output: %v", err)
 	}
-	defer writer.Close()
+	defer func() {
+		if err := writer.Close(); err != nil {
+			logger.Errorf("Failed to finalize output: %v", err)
+		}
+	}()
 
 	// Handle graceful shutdown
 	ctx, cancel := context.WithCancel(context.Background())

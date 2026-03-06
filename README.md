@@ -87,9 +87,10 @@ occur on the same day.
 ## Usage
 
 Run the binary with `-h` to see all available options. By default Safnari scans
-the current working directory using a concurrency level equal to the number of
-logical CPUs. It does not search for any strings or sensitive data types unless
-explicitly requested and writes results to a timestamped file named
+the current working directory for file inventory only, using a concurrency level
+equal to the number of logical CPUs. Sensitive content scanning, process
+enumeration, system information collection, and release update checks are
+disabled unless explicitly requested. Results are written to a timestamped file named
 `safnari-<human-readable>-<unix>.ndjson`.
 
 If only `--exclude-sensitive-data-types` is supplied, Safnari scans all built-in patterns except
@@ -104,9 +105,10 @@ Running Safnari without any flags applies these defaults:
 - `--path`: `.`
 - `--all-drives`: `false`
 - `--scan-files`: `true`
-- `--scan-sensitive`: `true`
-- `--scan-processes`: `true`
-- `--collect-system-info`: `true`
+- `--scan-sensitive`: `false`
+- `--scan-processes`: `false`
+- `--collect-system-info`: `false`
+- `--check-updates`: `false`
 - `--format`: `json`
 - `--output`: `safnari-<timestamp>-<unix>.ndjson`
 - `--concurrency`: number of logical CPUs (effective value adjusted by `--nice` unless
@@ -117,12 +119,13 @@ Running Safnari without any flags applies these defaults:
 - `--include`: none
 - `--exclude`: none
 - `--max-file-size`: `10485760`
+- `--content-scan-max-bytes`: `10485760`
 - `--max-output-file-size`: `104857600`
 - `--log-level`: `info`
 - `--max-io-per-second`: `1000` (set to `0` to disable throttling)
 - `--config`: none
 - `--extended-process-info`: `false`
-- `--include-sensitive-data-types`: none
+- `--include-sensitive-data-types`: none (all built-in and custom patterns are used when `--scan-sensitive` is enabled without an include list)
 - `--exclude-sensitive-data-types`: none
 - `--fuzzy-hash`: `false`
 - `--fuzzy-algorithms`: none (defaults to `tlsh` when fuzzy hashing enabled)
@@ -189,7 +192,8 @@ This will scan `/home/user`, compute SHA-256 hashes, search for the term
 is provided.
 
 Search results are included as a `search_hits` map where each term maps to the number of matches
-found in that file.
+found in that file. When content inspection is capped by `--content-scan-max-bytes`, file records
+also include `content_scan_bytes`, `content_scan_truncated`, and `collection_warnings`.
 
 Safnari writes NDJSON only. Each line is a record envelope with `record_type`, `schema_version`,
 and `payload`. The schema version is fixed at `2`, with record types `system_info`, `process`,
@@ -198,9 +202,8 @@ and `payload`. The schema version is fixed at `2`, with record types `system_inf
 Metrics include start/end timestamps, total files discovered, files scanned, files written to the
 output, and total running processes.
 
-Use `--version` to print the embedded version. On startup Safnari checks the
-latest GitHub release and logs a message if an update, including any noted
-security fixes, is available.
+Use `--version` to print the embedded version. Safnari does not make outbound
+release checks unless `--check-updates` is enabled.
 
 ### OTEL Export
 
@@ -208,7 +211,7 @@ When `--otel-endpoint` is set (or OTEL environment variables are present), Safna
 
 ## Security Posture (Brief)
 
-Safnari is a local CLI with no server listener. The primary security risks are the sensitivity of scan outputs and the integrity of any future telemetry exports. Output files are created with `0600` permissions by default, and sensitive matches are masked unless explicitly disabled. For managed fleet or OTEL deployments, prefer authenticated and encrypted export channels with data-minimization defaults (hashes/locators over raw values).
+Safnari is a local CLI with no server listener. The primary security risks are the sensitivity of scan outputs and the integrity of any future telemetry exports. Output files are created with `0600` permissions by default, sensitive matches are masked unless explicitly disabled, and Safnari skips its own output, delta-scan, trace, and diagnostics artifacts while walking target paths. For managed fleet or OTEL deployments, prefer authenticated and encrypted export channels with data-minimization defaults (hashes/locators over raw values).
 
 ## Capability Matrix
 
@@ -223,7 +226,7 @@ The table below summarizes what Safnari collects by default across platforms. Op
 | File times (create/access/change) | Yes | Yes | Yes | `--scan-files` | User |
 | File ID (inode/volume+file index) | Yes | Yes | Yes | `--scan-files` | User |
 | Extended attributes (xattrs) | Yes | Yes | No | `--collect-xattrs`, `--xattr-max-value-size` | User |
-| ACLs | No | No | Yes | `--collect-acl` | Admin for protected paths |
+| ACLs | Yes | Yes | Yes | `--collect-acl` | Admin for protected paths |
 | Alternate Data Streams | No | No | Yes | `--scan-ads` | Admin for protected paths |
 | Sensitive data scan | Yes | Yes | Yes | `--scan-sensitive`, include/exclude/custom patterns | User |
 | Search terms | Yes | Yes | Yes | `--search` | User |

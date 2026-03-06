@@ -3,6 +3,7 @@ package scanner
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"regexp"
 	"sort"
@@ -16,7 +17,7 @@ import (
 	"safnari/scanner/prefilter"
 )
 
-const maxContentScanBytes int64 = 10 * 1024 * 1024
+const defaultContentScanMaxBytes int64 = 10 * 1024 * 1024
 
 type FileModule interface {
 	Name() string
@@ -36,6 +37,12 @@ type FileContext struct {
 	contentText string
 	contentErr  error
 	textLoaded  bool
+
+	contentScanBytes     int64
+	contentScanTruncated bool
+	warnings             []string
+	warningSet           map[string]struct{}
+	sizeLimitNoted       bool
 }
 
 func (fc *FileContext) MimeType() string {
@@ -55,10 +62,7 @@ func (fc *FileContext) ContentBytes() ([]byte, error) {
 	if fc.content != nil || fc.contentErr != nil {
 		return fc.content, fc.contentErr
 	}
-	maxSize := fc.Cfg.MaxFileSize
-	if maxSize <= 0 || maxSize > maxContentScanBytes {
-		maxSize = maxContentScanBytes
-	}
+	maxSize := fc.contentScanLimit()
 	content, err := readFileContentWithMode(
 		fc.Path,
 		maxSize,
@@ -69,6 +73,9 @@ func (fc *FileContext) ContentBytes() ([]byte, error) {
 	)
 	fc.content = content
 	fc.contentErr = err
+	if err == nil {
+		fc.markContentScan(maxSize)
+	}
 	return fc.content, fc.contentErr
 }
 
@@ -90,6 +97,77 @@ func (fc *FileContext) ShouldSearchContent() bool {
 		return true
 	}
 	return shouldSearchContent(fc.MimeType(), fc.Path)
+}
+
+func (fc *FileContext) FullFileProcessingAllowed() bool {
+	if fc == nil || fc.Cfg == nil || fc.Info == nil {
+		return true
+	}
+	if fc.Cfg.MaxFileSize <= 0 {
+		return true
+	}
+	return fc.Info.Size() <= fc.Cfg.MaxFileSize
+}
+
+func (fc *FileContext) NoteFullFileProcessingSkipped() {
+	if fc == nil || fc.sizeLimitNoted || fc.Cfg == nil || fc.Info == nil || fc.Cfg.MaxFileSize <= 0 {
+		return
+	}
+	if fc.Info.Size() <= fc.Cfg.MaxFileSize {
+		return
+	}
+	fc.sizeLimitNoted = true
+	fc.addWarning(fmt.Sprintf("full-file operations skipped for files larger than %d bytes", fc.Cfg.MaxFileSize))
+}
+
+func (fc *FileContext) contentScanLimit() int64 {
+	if fc == nil || fc.Cfg == nil {
+		return defaultContentScanMaxBytes
+	}
+	if fc.Cfg.ContentScanMaxBytes == 0 {
+		return 0
+	}
+	if fc.Cfg.ContentScanMaxBytes < 0 {
+		return 0
+	}
+	return fc.Cfg.ContentScanMaxBytes
+}
+
+func (fc *FileContext) markContentScan(limit int64) {
+	if fc == nil || fc.Info == nil {
+		return
+	}
+	size := fc.Info.Size()
+	if size < 0 {
+		return
+	}
+	scanned := size
+	truncated := false
+	if limit > 0 && size > limit {
+		scanned = limit
+		truncated = true
+	}
+	if scanned > fc.contentScanBytes {
+		fc.contentScanBytes = scanned
+	}
+	if truncated {
+		fc.contentScanTruncated = true
+		fc.addWarning(fmt.Sprintf("content scan truncated at %d bytes", limit))
+	}
+}
+
+func (fc *FileContext) addWarning(msg string) {
+	if fc == nil || msg == "" {
+		return
+	}
+	if fc.warningSet == nil {
+		fc.warningSet = make(map[string]struct{}, 4)
+	}
+	if _, ok := fc.warningSet[msg]; ok {
+		return
+	}
+	fc.warningSet[msg] = struct{}{}
+	fc.warnings = append(fc.warnings, msg)
 }
 
 func buildFileModules(cfg *config.Config, patterns map[string]*regexp.Regexp) []FileModule {
@@ -213,6 +291,10 @@ func (m hashModule) Name() string { return "hashes" }
 func (m hashModule) Enabled(cfg *config.Config) bool { return cfg.ScanFiles }
 
 func (m hashModule) Collect(ctx context.Context, fc *FileContext, data *FileRecord) error {
+	if !fc.FullFileProcessingAllowed() {
+		fc.NoteFullFileProcessingSkipped()
+		return nil
+	}
 	hashes := hasher.ComputeHashes(fc.Path, fc.Cfg.HashAlgorithms)
 	data.Hashes = hashes
 	return nil
@@ -225,6 +307,10 @@ func (m metadataModule) Name() string { return "metadata" }
 func (m metadataModule) Enabled(cfg *config.Config) bool { return cfg.ScanFiles }
 
 func (m metadataModule) Collect(ctx context.Context, fc *FileContext, data *FileRecord) error {
+	if !fc.FullFileProcessingAllowed() {
+		fc.NoteFullFileProcessingSkipped()
+		return nil
+	}
 	meta := metadata.ExtractMetadata(fc.Path, fc.MimeType(), fc.Cfg.MetadataMaxBytes)
 	data.Metadata = meta
 	return nil
@@ -240,6 +326,10 @@ func (m fuzzyModule) Enabled(cfg *config.Config) bool { return cfg.FuzzyHash && 
 
 func (m fuzzyModule) Collect(ctx context.Context, fc *FileContext, data *FileRecord) error {
 	if !m.Enabled(fc.Cfg) {
+		return nil
+	}
+	if !fc.FullFileProcessingAllowed() {
+		fc.NoteFullFileProcessingSkipped()
 		return nil
 	}
 	size := fc.Info.Size()
@@ -291,10 +381,7 @@ func (m sensitiveModule) Collect(ctx context.Context, fc *FileContext, data *Fil
 		criticalPatterns,
 		len(fc.Cfg.SearchTerms) > 0,
 	) {
-		maxSize := fc.Cfg.MaxFileSize
-		if maxSize <= 0 || maxSize > maxContentScanBytes {
-			maxSize = maxContentScanBytes
-		}
+		maxSize := fc.contentScanLimit()
 		matches, counts, err = scanSensitiveDataDeterministicStream(
 			fc.Path,
 			fc.SensitivePatterns,
@@ -308,6 +395,7 @@ func (m sensitiveModule) Collect(ctx context.Context, fc *FileContext, data *Fil
 		if err != nil {
 			return err
 		}
+		fc.markContentScan(maxSize)
 	} else {
 		content, err := fc.ContentBytes()
 		if err != nil {
@@ -356,14 +444,12 @@ func (m searchModule) Collect(ctx context.Context, fc *FileContext, data *FileRe
 		err  error
 	)
 	if shouldUseStreamSearchCounter(fc.Cfg.ContentReadMode, fc.content != nil, len(fc.Cfg.SearchTerms)) {
-		maxSize := fc.Cfg.MaxFileSize
-		if maxSize <= 0 || maxSize > maxContentScanBytes {
-			maxSize = maxContentScanBytes
-		}
+		maxSize := fc.contentScanLimit()
 		hits, err = countSearchTermsStream(fc.Path, fc.Cfg.SearchTerms, fc.Cfg.StreamChunkSize, maxSize)
 		if err != nil {
 			return err
 		}
+		fc.markContentScan(maxSize)
 	} else {
 		content, readErr := fc.ContentBytes()
 		if readErr != nil {
@@ -421,6 +507,21 @@ func sensitiveMatchesMayBeTruncated(counts map[string]int, perTypeLimit, totalLi
 		}
 	}
 	return false
+}
+
+func (fc *FileContext) applyRecordState(data *FileRecord) {
+	if fc == nil || data == nil {
+		return
+	}
+	if fc.contentScanBytes > 0 {
+		data.ContentScanBytes = fc.contentScanBytes
+	}
+	if fc.contentScanTruncated {
+		data.ContentScanTruncated = true
+	}
+	if len(fc.warnings) > 0 {
+		data.CollectionWarnings = append(data.CollectionWarnings, fc.warnings...)
+	}
 }
 
 var errNotSupported = errors.New("not supported")

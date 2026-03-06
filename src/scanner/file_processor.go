@@ -23,8 +23,8 @@ import (
 	"github.com/h2non/filetype"
 )
 
-func ProcessFile(ctx context.Context, path string, cfg *config.Config, w *output.Writer, sensitivePatterns map[string]*regexp.Regexp) {
-	processFile(ctx, path, nil, cfg, w, sensitivePatterns, nil, true)
+func ProcessFile(ctx context.Context, path string, cfg *config.Config, w *output.Writer, sensitivePatterns map[string]*regexp.Regexp) error {
+	return processFile(ctx, path, nil, cfg, w, sensitivePatterns, nil, true)
 }
 
 func processFile(
@@ -36,37 +36,32 @@ func processFile(
 	sensitivePatterns map[string]*regexp.Regexp,
 	modules []FileModule,
 	enforcePathWithin bool,
-) {
+) error {
 	ctx, endTask := tracing.StartTask(ctx, "process_file")
 	tracing.Log(ctx, "file", path)
 	defer endTask()
 
 	select {
 	case <-ctx.Done():
-		return
+		return ctx.Err()
 	default:
 	}
 	if enforcePathWithin && !utils.IsPathWithin(path, cfg.StartPaths) {
 		logger.Warnf("Skipping file outside target paths: %s", path)
-		return
+		return nil
 	}
 
 	if fileInfo == nil {
 		fi, err := os.Stat(path)
 		if err != nil {
 			logger.Warnf("Failed to stat file %s: %v", path, err)
-			return
+			return nil
 		}
 		fileInfo = fi
 	}
 
 	if fileInfo.IsDir() {
-		return
-	}
-
-	if cfg.MaxFileSize > 0 && fileInfo.Size() > cfg.MaxFileSize {
-		logger.Debugf("Skipping large file %s", path)
-		return
+		return nil
 	}
 
 	w.IncrementScanned()
@@ -75,12 +70,18 @@ func processFile(
 	fileData, err := collectFileData(ctx, path, fileInfo, cfg, sensitivePatterns, modules)
 	endRegion()
 	if err != nil {
+		if errors.Is(err, context.Canceled) {
+			return err
+		}
 		logger.Warnf("Failed to process file %s: %v", path, err)
-		return
+		return nil
 	}
 	if shouldWriteFileData(cfg, fileData) {
-		w.WriteData(fileData)
+		if err := w.WriteData(fileData); err != nil {
+			return fmt.Errorf("write file record %s: %w", path, err)
+		}
 	}
+	return nil
 }
 
 func collectFileData(
@@ -113,6 +114,7 @@ func collectFileData(
 			logger.Debugf("Module %s failed for %s: %v", module.Name(), path, err)
 		}
 	}
+	fc.applyRecordState(data)
 
 	return data, nil
 }

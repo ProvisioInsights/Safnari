@@ -36,9 +36,13 @@ func TestOutputLifecycle(t *testing.T) {
 		t.Fatalf("init: %v", err)
 	}
 
-	w.WriteData(map[string]interface{}{"path": "test"})
+	if err := w.WriteData(map[string]interface{}{"path": "test"}); err != nil {
+		t.Fatalf("write: %v", err)
+	}
 	w.SetMetrics(Metrics{})
-	w.Close()
+	if err := w.Close(); err != nil {
+		t.Fatalf("close: %v", err)
+	}
 
 	records := readNDJSONRecords(t, tmp.Name())
 	if len(records) < 3 {
@@ -68,11 +72,15 @@ func TestWriteDataConcurrent(t *testing.T) {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
-			w.WriteData(map[string]interface{}{"path": i})
+			if err := w.WriteData(map[string]interface{}{"path": i}); err != nil {
+				t.Errorf("write %d: %v", i, err)
+			}
 		}(i)
 	}
 	wg.Wait()
-	w.Close()
+	if err := w.Close(); err != nil {
+		t.Fatalf("close: %v", err)
+	}
 
 	content, err := os.ReadFile(tmp.Name())
 	if err != nil {
@@ -98,9 +106,13 @@ func TestOutputRotation(t *testing.T) {
 
 	large := strings.Repeat("a", 150)
 	for i := 0; i < 5; i++ {
-		w.WriteData(map[string]interface{}{"data": large})
+		if err := w.WriteData(map[string]interface{}{"data": large}); err != nil {
+			t.Fatalf("write %d: %v", i, err)
+		}
 	}
-	w.Close()
+	if err := w.Close(); err != nil {
+		t.Fatalf("close: %v", err)
+	}
 
 	if _, err := os.Stat(base); err != nil {
 		t.Fatalf("missing base file: %v", err)

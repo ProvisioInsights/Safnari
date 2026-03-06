@@ -20,6 +20,7 @@ type Config struct {
 	ScanSensitive           bool              `json:"scan_sensitive"`
 	ScanProcesses           bool              `json:"scan_processes"`
 	CollectSystemInfo       bool              `json:"collect_system_info"`
+	CheckUpdates            bool              `json:"check_updates"`
 	OutputFormat            string            `json:"output_format"`
 	OutputFileName          string            `json:"output_file_name"`
 	ConcurrencyLevel        int               `json:"concurrency_level"`
@@ -29,6 +30,7 @@ type Config struct {
 	IncludePatterns         []string          `json:"include_patterns"`
 	ExcludePatterns         []string          `json:"exclude_patterns"`
 	MaxFileSize             int64             `json:"max_file_size"`
+	ContentScanMaxBytes     int64             `json:"content_scan_max_bytes"`
 	MaxOutputFileSize       int64             `json:"max_output_file_size"`
 	LogLevel                string            `json:"log_level"`
 	MaxIOPerSecond          int               `json:"max_io_per_second"`
@@ -98,9 +100,10 @@ func LoadConfig() (*Config, error) {
 	cfg := &Config{
 		StartPaths:              []string{"."},
 		ScanFiles:               true,
-		ScanSensitive:           true,
-		ScanProcesses:           true,
-		CollectSystemInfo:       true,
+		ScanSensitive:           false,
+		ScanProcesses:           false,
+		CollectSystemInfo:       false,
+		CheckUpdates:            false,
 		OutputFormat:            "json",
 		OutputFileName:          fmt.Sprintf("safnari-%s-%d.ndjson", timestamp, now.Unix()),
 		ConcurrencyLevel:        runtime.NumCPU(),
@@ -108,6 +111,7 @@ func LoadConfig() (*Config, error) {
 		HashAlgorithms:          []string{"md5", "sha1", "sha256"},
 		SearchTerms:             []string{},
 		MaxFileSize:             10485760,
+		ContentScanMaxBytes:     10 * 1024 * 1024,
 		MaxOutputFileSize:       104857600,
 		LogLevel:                "info",
 		MaxIOPerSecond:          1000,
@@ -171,6 +175,7 @@ func LoadConfig() (*Config, error) {
 	scanSensitive := flag.Bool("scan-sensitive", cfg.ScanSensitive, fmt.Sprintf("Enable sensitive data scanning (default: %t).", cfg.ScanSensitive))
 	scanProcesses := flag.Bool("scan-processes", cfg.ScanProcesses, fmt.Sprintf("Enable process scanning (default: %t).", cfg.ScanProcesses))
 	collectSystemInfo := flag.Bool("collect-system-info", cfg.CollectSystemInfo, fmt.Sprintf("Collect system information (default: %t).", cfg.CollectSystemInfo))
+	checkUpdates := flag.Bool("check-updates", cfg.CheckUpdates, fmt.Sprintf("Check GitHub for newer releases on startup (default: %t).", cfg.CheckUpdates))
 	format := flag.String("format", cfg.OutputFormat, fmt.Sprintf("Output format: json (default: %s).", cfg.OutputFormat))
 	output := flag.String("output", cfg.OutputFileName, "Output file name (default: safnari-<timestamp>-<unix>.ndjson).")
 	concurrency := flag.Int("concurrency", cfg.ConcurrencyLevel, fmt.Sprintf("Concurrency level (default: %d).", cfg.ConcurrencyLevel))
@@ -180,6 +185,14 @@ func LoadConfig() (*Config, error) {
 	includes := flag.String("include", "", "Comma-separated list of include patterns (default: none).")
 	excludes := flag.String("exclude", "", "Comma-separated list of exclude patterns (default: none).")
 	maxFileSize := flag.Int64("max-file-size", cfg.MaxFileSize, fmt.Sprintf("Maximum file size to process in bytes (default: %d).", cfg.MaxFileSize))
+	contentScanMaxBytes := flag.Int64(
+		"content-scan-max-bytes",
+		cfg.ContentScanMaxBytes,
+		fmt.Sprintf(
+			"Maximum bytes to inspect for content search and sensitive scans (default: %d, 0 means unlimited).",
+			cfg.ContentScanMaxBytes,
+		),
+	)
 	maxOutputFileSize := flag.Int64("max-output-file-size", cfg.MaxOutputFileSize, fmt.Sprintf("Maximum output file size before rotation in bytes (default: %d).", cfg.MaxOutputFileSize))
 	logLevel := flag.String("log-level", cfg.LogLevel, fmt.Sprintf("Log level: debug, info, warn, error, fatal, or panic (default: %s).", cfg.LogLevel))
 	maxIO := flag.Int("max-io-per-second", cfg.MaxIOPerSecond, fmt.Sprintf("Maximum disk I/O operations per second (default: %d).", cfg.MaxIOPerSecond))
@@ -327,6 +340,8 @@ func LoadConfig() (*Config, error) {
 			cfg.ScanProcesses = *scanProcesses
 		case "collect-system-info":
 			cfg.CollectSystemInfo = *collectSystemInfo
+		case "check-updates":
+			cfg.CheckUpdates = *checkUpdates
 		case "format":
 			cfg.OutputFormat = strings.ToLower(*format)
 		case "output":
@@ -346,6 +361,8 @@ func LoadConfig() (*Config, error) {
 			cfg.ExcludePatterns = parseCommaSeparated(*excludes)
 		case "max-file-size":
 			cfg.MaxFileSize = *maxFileSize
+		case "content-scan-max-bytes":
+			cfg.ContentScanMaxBytes = *contentScanMaxBytes
 		case "max-output-file-size":
 			cfg.MaxOutputFileSize = *maxOutputFileSize
 		case "log-level":
@@ -688,6 +705,9 @@ func (cfg *Config) validate() error {
 	}
 	if cfg.MetadataMaxBytes < 0 {
 		return fmt.Errorf("metadata-max-bytes must be zero or positive")
+	}
+	if cfg.ContentScanMaxBytes < 0 {
+		return fmt.Errorf("content-scan-max-bytes must be zero or positive")
 	}
 	if cfg.ConcurrencyLevel <= 0 {
 		return fmt.Errorf("concurrency level must be positive")

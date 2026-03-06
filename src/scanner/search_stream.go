@@ -30,10 +30,6 @@ func countSearchTermsStream(path string, terms []string, chunkSize int, maxSize 
 	}
 	defer file.Close()
 
-	if info, err := file.Stat(); err == nil && maxSize > 0 && info.Size() > maxSize {
-		return nil, nil
-	}
-
 	counters := make([]streamTermCounter, 0, len(normalized))
 	for _, term := range normalized {
 		pattern := []byte(term)

@@ -2,6 +2,7 @@ package output
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -34,6 +35,7 @@ type Writer struct {
 	file    *os.File
 	buf     *bufio.Writer
 	mu      sync.Mutex
+	closed  bool
 	metrics *Metrics
 	cfg     *config.Config
 	sysInfo *systeminfo.SystemInfo
@@ -85,7 +87,10 @@ func New(cfg *config.Config, sysInfo *systeminfo.SystemInfo, m *Metrics) (*Write
 	if err := w.openFile(); err != nil {
 		return nil, err
 	}
-	w.emitInitialRecords()
+	if err := w.emitInitialRecords(); err != nil {
+		_ = w.closeFile()
+		return nil, err
+	}
 	if m != nil {
 		m.TotalProcesses = len(sysInfo.RunningProcesses)
 		w.filesScanned.Store(int64(m.FilesScanned))
@@ -131,26 +136,34 @@ func (w *Writer) writeRecord(recordType string, payload any) error {
 	return err
 }
 
-func (w *Writer) WriteData(data any) {
+func (w *Writer) WriteData(data any) error {
 	w.mu.Lock()
 	defer w.mu.Unlock()
+	if w.closed {
+		return fmt.Errorf("writer is closed")
+	}
 
 	if err := w.writeRecord("file", data); err != nil {
-		return
+		return err
 	}
 	w.filesProcessed.Add(1)
 	w.emitRecordLocked("file", data)
 
 	w.recordsSinceSync++
 	if w.shouldSync() {
-		w.flush()
+		if err := w.flush(); err != nil {
+			return err
+		}
 		w.recordsSinceSync = 0
 		w.lastSyncAt = time.Now()
 	}
 
 	if w.cfg.MaxOutputFileSize > 0 && w.bytesWritten >= w.cfg.MaxOutputFileSize {
-		w.rotate()
+		if err := w.rotate(); err != nil {
+			return err
+		}
 	}
+	return nil
 }
 
 func (w *Writer) SetMetrics(m Metrics) {
@@ -165,55 +178,90 @@ func (w *Writer) IncrementScanned() {
 	w.filesScanned.Add(1)
 }
 
-func (w *Writer) Close() {
+func (w *Writer) Close() error {
 	w.mu.Lock()
 	defer w.mu.Unlock()
+	if w.closed {
+		return nil
+	}
+	w.closed = true
 	w.syncMetricCountersLocked()
-	w.emitMetricsLocked()
-	w.closeFile()
+	var closeErr error
+	if err := w.emitMetricsLocked(); err != nil {
+		closeErr = errors.Join(closeErr, err)
+	}
+	if err := w.closeFile(); err != nil {
+		closeErr = errors.Join(closeErr, err)
+	}
 	if w.otel != nil {
 		w.otel.Shutdown()
 	}
+	return closeErr
 }
 
-func (w *Writer) rotate() {
-	w.closeFile()
+func (w *Writer) rotate() error {
+	if err := w.closeFile(); err != nil {
+		return err
+	}
 	w.index++
-	_ = w.openFile()
+	return w.openFile()
 }
 
-func (w *Writer) closeFile() {
-	w.flush()
-	_ = w.file.Sync()
-	_ = w.file.Close()
+func (w *Writer) closeFile() error {
+	var closeErr error
+	if err := w.flush(); err != nil {
+		closeErr = errors.Join(closeErr, err)
+	}
+	if w.file != nil {
+		if err := w.file.Sync(); err != nil {
+			closeErr = errors.Join(closeErr, err)
+		}
+		if err := w.file.Close(); err != nil {
+			closeErr = errors.Join(closeErr, err)
+		}
+		w.file = nil
+	}
+	w.buf = nil
+	return closeErr
 }
 
-func (w *Writer) flush() {
+func (w *Writer) flush() error {
 	if w.buf != nil {
-		_ = w.buf.Flush()
+		if err := w.buf.Flush(); err != nil {
+			return err
+		}
 	}
+	return nil
 }
 
-func (w *Writer) emitInitialRecords() {
+func (w *Writer) emitInitialRecords() error {
 	if w.sysInfo == nil {
-		return
+		return nil
 	}
-	_ = w.writeRecord("system_info", w.sysInfo)
+	if err := w.writeRecord("system_info", w.sysInfo); err != nil {
+		return err
+	}
 	w.emitRecordLocked("system_info", w.sysInfo)
 	for i := range w.sysInfo.RunningProcesses {
 		proc := w.sysInfo.RunningProcesses[i]
-		_ = w.writeRecord("process", &proc)
+		if err := w.writeRecord("process", &proc); err != nil {
+			return err
+		}
 		w.emitRecordLocked("process", &proc)
 	}
+	return nil
 }
 
-func (w *Writer) emitMetricsLocked() {
+func (w *Writer) emitMetricsLocked() error {
 	if w.metrics == nil {
-		return
+		return nil
 	}
 	w.syncMetricCountersLocked()
-	_ = w.writeRecord("metrics", w.metrics)
+	if err := w.writeRecord("metrics", w.metrics); err != nil {
+		return err
+	}
 	w.emitRecordLocked("metrics", w.metrics)
+	return nil
 }
 
 func (w *Writer) emitRecordLocked(recordType string, payload interface{}) {

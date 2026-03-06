@@ -88,9 +88,8 @@ Run the compiled binary with desired flags. Running with `-h` prints all options
 ./bin/safnari-$(go env GOOS)-$(go env GOARCH) --help
 ```
 
-Use `--version` to display the current version. On startup Safnari checks the latest
-GitHub release and logs a message if a newer version, including any security fixes,
-is available.
+Use `--version` to display the current version. Safnari only checks GitHub for newer
+releases when `--check-updates` is enabled.
 
 ## Configuration
 
@@ -99,9 +98,10 @@ Safnari accepts the following flags. Each description lists the default value in
 - `--path`: Comma-separated list of start paths to scan (default: `.`).
 - `--all-drives`: Scan all local drives (Windows only) (default: `false`).
 - `--scan-files`: Enable file scanning (default: `true`).
-- `--scan-sensitive`: Enable sensitive data scanning (default: `true`).
-- `--scan-processes`: Enable process scanning (default: `true`).
-- `--collect-system-info`: Collect system information (default: `true`).
+- `--scan-sensitive`: Enable sensitive data scanning (default: `false`).
+- `--scan-processes`: Enable process scanning (default: `false`).
+- `--collect-system-info`: Collect system information (default: `false`).
+- `--check-updates`: Check GitHub for newer releases on startup (default: `false`).
 - `--format`: Output format: json (default: `json`).
 - `--output`: Output file name (default: `safnari-<timestamp>-<unix>.ndjson`).
 - `--concurrency`: Concurrency level (default: number of logical CPUs; effective value is adjusted
@@ -113,7 +113,8 @@ Safnari accepts the following flags. Each description lists the default value in
   (default: `mask`). Use `none` to disable.
 - `--include`: Comma-separated list of include patterns (default: none).
 - `--exclude`: Comma-separated list of exclude patterns (default: none).
-- `--max-file-size`: Maximum file size to process in bytes (default: `10485760`).
+- `--max-file-size`: Maximum file size for full-file operations such as hashing and deep metadata extraction in bytes (default: `10485760`).
+- `--content-scan-max-bytes`: Maximum bytes to inspect for search and sensitive scans (default: `10485760`; `0` means unlimited).
 - `--max-output-file-size`: Maximum output file size before rotation in bytes
   (default: `104857600`).
 - `--log-level`: Log level: debug, info, warn, error, fatal, or panic (default: `info`).
@@ -123,7 +124,8 @@ Safnari accepts the following flags. Each description lists the default value in
 - `--extended-process-info`: Gather extended process information (requires
   elevated privileges) (default: `false`).
 - `--include-sensitive-data-types`: Comma-separated list of sensitive data types
-  to include when scanning. Use `all` to include all built-in patterns (default: none).
+  to include when scanning. When omitted, Safnari scans all built-in and custom patterns
+  once `--scan-sensitive` is enabled.
 - `--exclude-sensitive-data-types`: Comma-separated list of sensitive data types
   to skip when scanning (default: none).
 - `--custom-patterns`: Custom sensitive data patterns as a JSON object mapping
@@ -191,6 +193,10 @@ exclusion list removes types from the inclusion list.
 Safnari writes NDJSON only. Each line is a schema v2 record with `record_type`,
 `schema_version`, and `payload`.
 
+When content inspection is capped by `--content-scan-max-bytes`, file records include
+`content_scan_bytes`, `content_scan_truncated`, and `collection_warnings` so partial
+inspection is explicit instead of silent.
+
 Metrics include start/end timestamps, total files discovered, files scanned, files written to the
 output, and total running processes.
 
@@ -216,7 +222,7 @@ be disabled with the listed flags.
 | File times (create/access/change) | Yes | Yes | Yes | `--scan-files` | User |
 | File ID (inode/volume+file index) | Yes | Yes | Yes | `--scan-files` | User |
 | Xattrs | Yes | Yes | No | `--collect-xattrs`, `--xattr-max-value-size` | User |
-| ACLs | No | No | Yes | `--collect-acl` | Admin for protected paths |
+| ACLs | Yes | Yes | Yes | `--collect-acl` | Admin for protected paths |
 | Alternate Data Streams | No | No | Yes | `--scan-ads` | Admin for protected paths |
 | Sensitive data scan | Yes | Yes | Yes | `--scan-sensitive`, include/exclude/custom | User |
 | Search terms | Yes | Yes | Yes | `--search` | User |
