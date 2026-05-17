@@ -5,6 +5,9 @@ machine. It scans user-defined paths, collects rich metadata about files, and
 retrieves system details such as running processes. Safnari supports numerous
 configuration flags for filtering, hashing, and output control.
 
+[Performance dashboard](https://provisioinsights.github.io/Safnari/) tracks the
+latest benchmark run published by the GitHub Performance workflow.
+
 ## Features
 
 - Gather host information such as OS details, installed patches, and hostname
