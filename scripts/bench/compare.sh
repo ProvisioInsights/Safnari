@@ -24,8 +24,8 @@ if [[ ! -f "$CANDIDATE" ]]; then
 fi
 
 if ! command -v benchstat >/dev/null 2>&1; then
-  echo "[bench-compare] benchstat not found; installing golang.org/x/perf/cmd/benchstat@latest"
-  go install golang.org/x/perf/cmd/benchstat@latest
+  echo "[bench-compare] benchstat not found; installing golang.org/x/perf/cmd/benchstat@v0.0.0-20260512194132-3cf34090a3db"
+  go install golang.org/x/perf/cmd/benchstat@v0.0.0-20260512194132-3cf34090a3db
 fi
 
 BENCHSTAT_BIN="$(go env GOPATH)/bin/benchstat"

@@ -15,8 +15,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
         with:
           go-version-file: src/go.mod
           cache-dependency-path: src/go.sum
@@ -44,7 +44,7 @@ jobs:
           echo "dir=$latest" >> "$GITHUB_OUTPUT"
         shell: bash
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always() && steps.bench_dir.outputs.dir != ''
         with:
           name: benchmarks-linux-amd64
@@ -58,7 +58,7 @@ jobs:
           echo "dir=$latest" >> "$GITHUB_OUTPUT"
         shell: bash
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always() && steps.gate_dir.outputs.dir != ''
         with:
           name: perf-gate-linux-amd64
@@ -79,7 +79,7 @@ jobs:
         run: make profile-generate
         shell: bash
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: pgo-profile-linux-amd64
@@ -107,8 +107,8 @@ jobs:
     runs-on: ${{ matrix.os }}
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
         with:
           go-version-file: src/go.mod
           cache-dependency-path: src/go.sum
@@ -134,7 +134,7 @@ jobs:
           echo "dir=$latest" >> "$GITHUB_OUTPUT"
         shell: bash
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always() && steps.bench_dir.outputs.dir != ''
         with:
           name: benchmarks-${{ matrix.goos }}-${{ matrix.goarch }}
@@ -148,7 +148,7 @@ jobs:
           echo "dir=$latest" >> "$GITHUB_OUTPUT"
         shell: bash
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always() && steps.gate_dir.outputs.dir != ''
         with:
           name: perf-gate-${{ matrix.goos }}-${{ matrix.goarch }}
@@ -159,7 +159,7 @@ jobs:
         run: make profile-generate
         shell: bash
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always() && matrix.os == 'ubuntu-latest'
         with:
           name: pgo-profile-${{ matrix.goos }}-${{ matrix.goarch }}
@@ -175,8 +175,8 @@ jobs:
     continue-on-error: true
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
         with:
           go-version-file: src/go.mod
           cache-dependency-path: src/go.sum
@@ -192,7 +192,7 @@ jobs:
           echo "dir=$latest" >> "$GITHUB_OUTPUT"
         shell: bash
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: simd-benchmarks-linux-amd64
           path: ${{ steps.simd_dir.outputs.dir }}
