@@ -17,7 +17,7 @@ import (
 	"golang.org/x/sys/windows/svc"
 )
 
-const trustedCommandPath = `C:\Windows\System32;C:\Windows`
+const trustedCommandPath = `C:\Windows\System32;C:\Windows\System32\wbem;C:\Windows\System32\WindowsPowerShell\v1.0;C:\Windows`
 
 func gatherOSVersion(sysInfo *SystemInfo) error {
 	out, err := runCommandOutput("cmd", "/C", "ver")

@@ -121,7 +121,7 @@ Running Safnari without any flags applies these defaults:
 - `--include`: none
 - `--exclude`: none
 - `--max-file-size`: `10485760`
-- `--content-scan-max-bytes`: `10485760`
+- `--content-scan-max-bytes`: `10485760` (`0` means unlimited only when sensitive scanning is disabled)
 - `--max-output-file-size`: `104857600`
 - `--log-level`: `info`
 - `--max-io-per-second`: `1000` (set to `0` to disable throttling)

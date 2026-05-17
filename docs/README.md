@@ -129,7 +129,7 @@ Safnari accepts the following flags. Each description lists the default value in
 - `--include`: Comma-separated list of include patterns (default: none).
 - `--exclude`: Comma-separated list of exclude patterns (default: none).
 - `--max-file-size`: Maximum file size for full-file operations such as hashing and deep metadata extraction in bytes (default: `10485760`).
-- `--content-scan-max-bytes`: Maximum bytes to inspect for search and sensitive scans (default: `10485760`; `0` means unlimited).
+- `--content-scan-max-bytes`: Maximum bytes to inspect for search and sensitive scans (default: `10485760`; `0` means unlimited only when sensitive scanning is disabled).
 - `--max-output-file-size`: Maximum output file size before rotation in bytes
   (default: `104857600`).
 - `--log-level`: Log level: debug, info, warn, error, fatal, or panic (default: `info`).

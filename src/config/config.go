@@ -207,7 +207,7 @@ func LoadConfig() (*Config, error) {
 		"content-scan-max-bytes",
 		cfg.ContentScanMaxBytes,
 		fmt.Sprintf(
-			"Maximum bytes to inspect for content search and sensitive scans (default: %d, 0 means unlimited).",
+			"Maximum bytes to inspect for content search and sensitive scans (default: %d; 0 means unlimited only when sensitive scanning is disabled).",
 			cfg.ContentScanMaxBytes,
 		),
 	)

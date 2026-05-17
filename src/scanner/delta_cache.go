@@ -140,12 +140,9 @@ func (c *DeltaChunkCache) Load(path string, fingerprint string, readLimit int64)
 	if !validDeltaCacheEntryName(key, name) {
 		return nil, false, fmt.Errorf("invalid delta cache entry name for key %s", key)
 	}
-	data, err := readFileNoSymlink(filepath.Join(c.dir, name))
+	data, err := readFileNoSymlinkMax(filepath.Join(c.dir, name), maxDeltaCacheFileBytes)
 	if err != nil {
 		return nil, false, err
-	}
-	if len(data) > maxDeltaCacheFileBytes {
-		return nil, false, fmt.Errorf("delta cache entry too large: %s", name)
 	}
 	var entry deltaCachedFile
 	if err := json.Unmarshal(data, &entry); err != nil {
@@ -191,24 +188,11 @@ func (c *DeltaChunkCache) Store(path string, entry *deltaCachedFile) error {
 
 func (c *DeltaChunkCache) loadManifest() error {
 	path := filepath.Join(c.dir, deltaCacheManifestName)
-	info, err := os.Lstat(path)
+	data, err := readFileNoSymlinkMax(path, maxDeltaCacheManifestBytes)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil
 		}
-		return err
-	}
-	if info.Mode()&os.ModeSymlink != 0 {
-		return fmt.Errorf("refusing to read delta manifest through symlink: %s", path)
-	}
-	if !info.Mode().IsRegular() {
-		return fmt.Errorf("refusing to read non-regular delta manifest: %s", path)
-	}
-	if info.Size() > maxDeltaCacheManifestBytes {
-		return fmt.Errorf("delta cache manifest too large: %d", info.Size())
-	}
-	data, err := os.ReadFile(path)
-	if err != nil {
 		return err
 	}
 	if err := json.Unmarshal(data, &c.manifest); err != nil {
