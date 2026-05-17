@@ -73,6 +73,8 @@ jobs:
             echo "PR performance gate is informational and did not meet the current thresholds." >> "$GITHUB_STEP_SUMMARY"
             echo "See the perf-gate-linux-amd64 artifact for the detailed comparison output." >> "$GITHUB_STEP_SUMMARY"
           fi
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "The benchmarks-linux-amd64 artifact includes site/index.html and metrics.json for dashboard preview." >> "$GITHUB_STEP_SUMMARY"
         shell: bash
 
       - name: Generate PGO profile
@@ -196,3 +198,67 @@ jobs:
         with:
           name: simd-benchmarks-linux-amd64
           path: ${{ steps.simd_dir.outputs.dir }}
+
+  performance-dashboard:
+    if: github.event_name != 'pull_request'
+    needs: benchmark-matrix
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: source
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: benchmarks-linux-amd64
+          path: performance-dashboard
+
+      - name: Carry forward benchmark history
+        run: |
+          set -euo pipefail
+          history_url="https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/metrics-history.jsonl"
+          if ! history_status="$(curl -sSL -w '%{http_code}' -o performance-dashboard/metrics-history.jsonl "$history_url")"; then
+            echo "Failed to fetch existing benchmark history from $history_url" >&2
+            exit 1
+          fi
+          if [ "$history_status" = "404" ]; then
+            : > performance-dashboard/metrics-history.jsonl
+          elif [ "$history_status" -lt 200 ] || [ "$history_status" -ge 300 ]; then
+            echo "Failed to fetch existing benchmark history: HTTP $history_status" >&2
+            exit 1
+          fi
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+
+          path = Path("performance-dashboard/metrics-history.jsonl")
+          valid = []
+          for line in path.read_text(errors="replace").splitlines():
+              try:
+                  json.loads(line)
+              except json.JSONDecodeError:
+                  continue
+              valid.append(line)
+          path.write_text("\n".join(valid) + ("\n" if valid else ""))
+          PY
+          jq -c . performance-dashboard/metrics.json >> performance-dashboard/metrics-history.jsonl
+          tail -n 200 performance-dashboard/metrics-history.jsonl > performance-dashboard/metrics-history.tmp
+          mv performance-dashboard/metrics-history.tmp performance-dashboard/metrics-history.jsonl
+          python3 source/scripts/bench/render-dashboard.py performance-dashboard
+        shell: bash
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: performance-dashboard/site
+
+      - id: deployment
+        uses: actions/deploy-pages@v4

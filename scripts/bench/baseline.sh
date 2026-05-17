@@ -231,6 +231,8 @@ cat >>"$OUT_DIR/report.md" <<EOF
 - Delta second-run chunk/mtime p50 speedup: \`${delta_cache_mode_speedup}x\`
 EOF
 
+python3 "$ROOT/scripts/bench/render-dashboard.py" "$OUT_DIR"
+
 echo "[bench-baseline] generated:"
 echo "  - $OUT_DIR/benchmark.txt"
 echo "  - $OUT_DIR/benchmark-prefilter.txt"
@@ -243,3 +245,5 @@ echo "  - $OUT_DIR/duplicate-logs-samples.txt"
 echo "  - $OUT_DIR/delta-second-run-samples.txt"
 echo "  - $OUT_DIR/delta-cache-mode-samples.txt"
 echo "  - $OUT_DIR/report.md"
+echo "  - $OUT_DIR/metrics.json"
+echo "  - $OUT_DIR/site/index.html"
