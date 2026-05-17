@@ -417,6 +417,7 @@ func runContentPipeline(fc *FileContext) (*contentAnalysisResults, error) {
 	}
 
 	if fc.deltaCache != nil &&
+		!(sensitiveConsumer != nil && fc.Cfg.RedactSensitive != "") &&
 		source.ShouldSearchContent() &&
 		(searchConsumer != nil || sensitiveConsumer != nil) &&
 		shouldUseDeltaChunkCacheForFile(fc, contentLimit, hashConsumer != nil || fuzzyConsumer != nil) {

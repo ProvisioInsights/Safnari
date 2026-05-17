@@ -41,6 +41,8 @@ var (
 	}
 )
 
+const trustedCommandPath = "/usr/sbin:/usr/bin:/sbin:/bin:/usr/local/bin:/opt/homebrew/bin"
+
 func gatherOSVersion(sysInfo *SystemInfo) error {
 	switch runtime.GOOS {
 	case "linux":
@@ -282,9 +284,39 @@ func appendParsedCronTasks(tasks []string, data []byte) []string {
 }
 
 func safeCommand(ctx context.Context, name string, args ...string) *exec.Cmd {
-	cmd := exec.CommandContext(ctx, name, args...)
-	cmd.Env = append(os.Environ(), "PATH=/usr/sbin:/usr/bin:/sbin:/bin:/usr/local/bin:/opt/homebrew/bin")
+	resolvedName := resolveTrustedCommand(name, trustedCommandPath)
+	cmd := exec.CommandContext(ctx, resolvedName, args...)
+	cmd.Env = withTrustedPath(os.Environ(), trustedCommandPath)
 	return cmd
+}
+
+func resolveTrustedCommand(name, trustedPath string) string {
+	if filepath.IsAbs(name) {
+		return name
+	}
+	for _, dir := range filepath.SplitList(trustedPath) {
+		if dir == "" {
+			continue
+		}
+		candidate := filepath.Join(dir, name)
+		info, err := os.Stat(candidate)
+		if err != nil || info.IsDir() || info.Mode()&0111 == 0 {
+			continue
+		}
+		return candidate
+	}
+	return filepath.Join("__safnari_command_not_found__", name)
+}
+
+func withTrustedPath(env []string, trustedPath string) []string {
+	out := make([]string, 0, len(env)+1)
+	for _, item := range env {
+		if strings.HasPrefix(item, "PATH=") {
+			continue
+		}
+		out = append(out, item)
+	}
+	return append(out, "PATH="+trustedPath)
 }
 
 func runCommandOutput(name string, args ...string) ([]byte, error) {

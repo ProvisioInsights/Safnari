@@ -14,6 +14,15 @@ import (
 	"safnari/version"
 )
 
+const (
+	maxConcurrencyLevel      = 4096
+	maxStreamChunkSize       = 16 * 1024 * 1024
+	minAutoTuneInterval      = 100 * time.Millisecond
+	maxSensitiveScanBytes    = 256 * 1024 * 1024
+	maxSensitiveWindowBytes  = 16 * 1024 * 1024
+	maxTraceFlightBufferSize = 512 * 1024 * 1024
+)
+
 type Config struct {
 	StartPaths              []string          `json:"start_paths"`
 	AllDrives               bool              `json:"all_drives"`
@@ -678,8 +687,8 @@ func (cfg *Config) validate() error {
 		return fmt.Errorf("fuzzy size limits must be zero or positive")
 	}
 	if cfg.AutoTune {
-		if cfg.AutoTuneInterval <= 0 {
-			return fmt.Errorf("auto-tune-interval must be positive")
+		if cfg.AutoTuneInterval < minAutoTuneInterval {
+			return fmt.Errorf("auto-tune-interval must be at least %s", minAutoTuneInterval)
 		}
 		if cfg.AutoTuneTargetCPU <= 0 || cfg.AutoTuneTargetCPU > 100 {
 			return fmt.Errorf("auto-tune-target-cpu must be between 1 and 100")
@@ -721,6 +730,9 @@ func (cfg *Config) validate() error {
 	if cfg.StreamChunkSize <= 0 {
 		return fmt.Errorf("stream-chunk-size must be positive")
 	}
+	if cfg.StreamChunkSize > maxStreamChunkSize {
+		return fmt.Errorf("stream-chunk-size must be at most %d", maxStreamChunkSize)
+	}
 	if cfg.StreamOverlapBytes < 0 {
 		return fmt.Errorf("stream-overlap-bytes must be zero or positive")
 	}
@@ -729,6 +741,9 @@ func (cfg *Config) validate() error {
 	}
 	if cfg.SensitiveWindowBytes <= 0 {
 		return fmt.Errorf("sensitive-window-bytes must be positive")
+	}
+	if cfg.SensitiveWindowBytes > maxSensitiveWindowBytes {
+		return fmt.Errorf("sensitive-window-bytes must be at most %d", maxSensitiveWindowBytes)
 	}
 	if cfg.DiagSlowScanThreshold < 0 {
 		return fmt.Errorf("diag-slow-scan-threshold must be zero or positive")
@@ -762,8 +777,17 @@ func (cfg *Config) validate() error {
 	if cfg.ContentScanMaxBytes < 0 {
 		return fmt.Errorf("content-scan-max-bytes must be zero or positive")
 	}
+	if cfg.ScanSensitive && cfg.ContentScanMaxBytes == 0 {
+		return fmt.Errorf("content-scan-max-bytes must be bounded when sensitive scanning is enabled")
+	}
+	if cfg.ScanSensitive && cfg.ContentScanMaxBytes > maxSensitiveScanBytes {
+		return fmt.Errorf("content-scan-max-bytes must be at most %d when sensitive scanning is enabled", maxSensitiveScanBytes)
+	}
 	if cfg.ConcurrencyLevel <= 0 {
 		return fmt.Errorf("concurrency level must be positive")
+	}
+	if cfg.ConcurrencyLevel > maxConcurrencyLevel {
+		return fmt.Errorf("concurrency level must be at most %d", maxConcurrencyLevel)
 	}
 	if cfg.NiceLevel != "high" && cfg.NiceLevel != "medium" && cfg.NiceLevel != "low" {
 		return fmt.Errorf("invalid nice level: %s", cfg.NiceLevel)
@@ -774,6 +798,9 @@ func (cfg *Config) validate() error {
 	}
 	if cfg.DeltaScan && cfg.LastScanFile == "" && cfg.LastScanTime == "" {
 		return fmt.Errorf("either last scan file or last scan time must be specified when delta scanning is enabled")
+	}
+	if cfg.TraceFlightMaxBytes > maxTraceFlightBufferSize {
+		return fmt.Errorf("trace-flight-max-bytes must be at most %d", maxTraceFlightBufferSize)
 	}
 	if cfg.LastScanTime != "" {
 		if _, err := time.Parse(time.RFC3339, cfg.LastScanTime); err != nil {

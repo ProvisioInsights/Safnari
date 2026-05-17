@@ -96,6 +96,101 @@ func TestDeltaChunkCacheReuseMatchesFreshCollection(t *testing.T) {
 	}
 }
 
+func TestDeltaChunkCacheBypassedWhenSensitiveOutputRedacted(t *testing.T) {
+	root := t.TempDir()
+	cacheDir := filepath.Join(root, "delta-cache")
+	path := filepath.Join(root, "replica.log")
+	payload := strings.Repeat("ALPHA test@example.com api_key=abcd1234\n", 65536)
+	if err := os.WriteFile(path, []byte(payload), 0644); err != nil {
+		t.Fatalf("write seed file: %v", err)
+	}
+
+	cfg := &config.Config{
+		ScanFiles:           true,
+		ScanSensitive:       true,
+		DeltaScan:           true,
+		DeltaCacheMode:      "chunk",
+		DeltaCacheDir:       cacheDir,
+		DeltaCacheMaxBytes:  32 << 20,
+		HashAlgorithms:      []string{"sha256"},
+		ContentScanMaxBytes: 0,
+		SensitiveEngine:     "deterministic",
+		SensitiveLongtail:   "off",
+		SensitiveMaxPerType: 64,
+		SensitiveMaxTotal:   128,
+		IncludeDataTypes:    []string{"email", "api_key"},
+		RedactSensitive:     "hash",
+	}
+	patterns := GetPatterns(cfg.IncludeDataTypes, nil, nil)
+	cache, err := openDeltaChunkCache(cfg)
+	if err != nil {
+		t.Fatalf("open delta cache: %v", err)
+	}
+	defer func() { _ = cache.Close() }()
+
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("stat file: %v", err)
+	}
+	record, err := collectFileData(context.Background(), path, info, cfg, patterns, buildFileModules(cfg, patterns), cache)
+	if err != nil {
+		t.Fatalf("collect file: %v", err)
+	}
+	for _, values := range record.SensitiveData {
+		for _, value := range values {
+			if strings.Contains(value, "test@example.com") || strings.Contains(value, "abcd1234") {
+				t.Fatalf("expected sensitive output to be redacted, got %q", value)
+			}
+		}
+	}
+	if entries, err := os.ReadDir(cacheDir); err == nil && len(entries) > 0 {
+		t.Fatalf("expected redacted sensitive scan to bypass delta cache, found %d entries", len(entries))
+	}
+}
+
+func TestOpenDeltaChunkCacheRejectsOversizedManifest(t *testing.T) {
+	root := t.TempDir()
+	cacheDir := filepath.Join(root, "delta-cache")
+	if err := os.MkdirAll(cacheDir, 0700); err != nil {
+		t.Fatalf("mkdir cache: %v", err)
+	}
+	manifestPath := filepath.Join(cacheDir, deltaCacheManifestName)
+	if err := os.WriteFile(manifestPath, []byte(strings.Repeat("x", maxDeltaCacheManifestBytes+1)), 0600); err != nil {
+		t.Fatalf("write manifest: %v", err)
+	}
+	cfg := &config.Config{
+		DeltaScan:          true,
+		DeltaCacheMode:     "chunk",
+		DeltaCacheDir:      cacheDir,
+		DeltaCacheMaxBytes: 1 << 20,
+	}
+	if _, err := openDeltaChunkCache(cfg); err == nil {
+		t.Fatal("expected oversized manifest to be rejected")
+	}
+}
+
+func TestOpenDeltaChunkCacheRejectsManifestTraversalEntry(t *testing.T) {
+	root := t.TempDir()
+	cacheDir := filepath.Join(root, "delta-cache")
+	if err := os.MkdirAll(cacheDir, 0700); err != nil {
+		t.Fatalf("mkdir cache: %v", err)
+	}
+	key := strings.Repeat("a", 64)
+	manifest := `{"version":1,"entries":{"` + key + `":"../outside.json"}}`
+	if err := os.WriteFile(filepath.Join(cacheDir, deltaCacheManifestName), []byte(manifest), 0600); err != nil {
+		t.Fatalf("write manifest: %v", err)
+	}
+	cfg := &config.Config{
+		DeltaScan:          true,
+		DeltaCacheMode:     "chunk",
+		DeltaCacheDir:      cacheDir,
+		DeltaCacheMaxBytes: 1 << 20,
+	}
+	if _, err := openDeltaChunkCache(cfg); err == nil {
+		t.Fatal("expected traversal manifest entry to be rejected")
+	}
+}
+
 func TestInternalArtifactFilterSkipsDeltaCacheDir(t *testing.T) {
 	root := t.TempDir()
 	cacheDir := filepath.Join(root, "cache")

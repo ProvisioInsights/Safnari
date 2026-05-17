@@ -174,7 +174,13 @@ func sanitizePayload(recordType string, payload interface{}, policy otelPolicy) 
 		}
 		if !policy.includeSensitive {
 			delete(sanitized, "sensitive_data")
+			delete(sanitized, "sensitive_data_match_counts")
+			delete(sanitized, "sensitive_data_truncated")
 			delete(sanitized, "search_hits")
+			delete(sanitized, "metadata")
+			delete(sanitized, "xattrs")
+			delete(sanitized, "acl")
+			delete(sanitized, "alternate_data_streams")
 		}
 		return sanitized
 	case "process":
@@ -401,11 +407,11 @@ func fileSemanticAttributes(data map[string]interface{}, policy otelPolicy) []ot
 		}
 	}
 
-	kvs = appendInterfaceAttr(kvs, "safnari.file.metadata", getFieldValue(data, "metadata"))
-	kvs = appendInterfaceAttr(kvs, "safnari.file.xattrs", getFieldValue(data, "xattrs"))
-	kvs = appendInterfaceAttr(kvs, "safnari.file.acl", getFieldValue(data, "acl"))
-	kvs = appendInterfaceAttr(kvs, "safnari.file.alternate_data_streams", getFieldValue(data, "alternate_data_streams"))
 	if policy.includeSensitive {
+		kvs = appendInterfaceAttr(kvs, "safnari.file.metadata", getFieldValue(data, "metadata"))
+		kvs = appendInterfaceAttr(kvs, "safnari.file.xattrs", getFieldValue(data, "xattrs"))
+		kvs = appendInterfaceAttr(kvs, "safnari.file.acl", getFieldValue(data, "acl"))
+		kvs = appendInterfaceAttr(kvs, "safnari.file.alternate_data_streams", getFieldValue(data, "alternate_data_streams"))
 		kvs = appendInterfaceAttr(kvs, "safnari.file.sensitive_data", getFieldValue(data, "sensitive_data"))
 		kvs = appendInterfaceAttr(kvs, "safnari.file.search_hits", getFieldValue(data, "search_hits"))
 	}

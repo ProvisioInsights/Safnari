@@ -53,7 +53,7 @@ func processFile(
 	}
 
 	if fileInfo == nil {
-		fi, err := os.Stat(path)
+		fi, err := os.Lstat(path)
 		if err != nil {
 			logger.Warnf("Failed to stat file %s: %v", path, err)
 			return nil
@@ -62,6 +62,10 @@ func processFile(
 	}
 
 	if fileInfo.IsDir() {
+		return nil
+	}
+	if fileInfo.Mode()&os.ModeSymlink != 0 {
+		logger.Warnf("Skipping symlink outside authoritative scan boundary: %s", path)
 		return nil
 	}
 

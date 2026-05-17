@@ -4,7 +4,6 @@ package tracing
 
 import (
 	"context"
-	"os"
 	"runtime/trace"
 	"time"
 )
@@ -55,7 +54,7 @@ func WriteFlightRecorder(path string) error {
 	if flightRecorder == nil || !flightRecorder.Enabled() {
 		return nil
 	}
-	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0600)
+	f, err := openPrivateFileNoSymlink(path)
 	if err != nil {
 		return err
 	}

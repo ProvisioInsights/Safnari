@@ -3,6 +3,7 @@ package update
 import (
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -89,5 +90,20 @@ func TestCheckForUpdateOpaqueTagsDoNotTriggerFalsePositive(t *testing.T) {
 	}
 	if newer {
 		t.Fatal("did not expect opaque tag strings to be treated as ordered releases")
+	}
+}
+
+func TestCheckForUpdateLimitsResponseBody(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"tag_name":"v9.9.9","body":"`))
+		_, _ = w.Write([]byte(strings.Repeat("x", maxReleaseBodyBytes+1)))
+		_, _ = w.Write([]byte(`"}`))
+	}))
+	defer ts.Close()
+
+	_, _, _, err := checkForUpdateURL("1.0.0", ts.URL)
+	if err == nil {
+		t.Fatal("expected oversized release response to fail decoding")
 	}
 }

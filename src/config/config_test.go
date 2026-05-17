@@ -496,3 +496,66 @@ func TestOptimizationFlagValidation(t *testing.T) {
 		t.Fatal("expected invalid delta-cache-max-bytes error")
 	}
 }
+
+func TestValidateRejectsResourceExhaustionKnobs(t *testing.T) {
+	base := func() *Config {
+		return &Config{
+			ScanFiles:               true,
+			StartPaths:              []string{"."},
+			OutputFormat:            "json",
+			ConcurrencyLevel:        1,
+			NiceLevel:               "medium",
+			LogLevel:                "info",
+			PerfProfile:             "adaptive",
+			SensitiveEngine:         "auto",
+			SensitiveLongtail:       "sampled",
+			SensitiveMatchMode:      "all",
+			SensitiveWindowBytes:    4096,
+			ContentReadMode:         "auto",
+			ContentScanMaxBytes:     1024,
+			StreamChunkSize:         256 * 1024,
+			StreamOverlapBytes:      512,
+			MmapMinSize:             128 * 1024,
+			JSONLayout:              "ndjson",
+			DeltaCacheMode:          "chunk",
+			DeltaCacheDir:           ".cache",
+			AutoTune:                true,
+			AutoTuneInterval:        time.Second,
+			AutoTuneTargetCPU:       60,
+			AutoTuneTargetRunQ:      1,
+			AutoTuneTargetLatencyMs: 25,
+			DiagDir:                 ".",
+		}
+	}
+
+	cfg := base()
+	cfg.ConcurrencyLevel = maxConcurrencyLevel + 1
+	if err := cfg.validate(); err == nil {
+		t.Fatal("expected excessive concurrency to fail validation")
+	}
+
+	cfg = base()
+	cfg.StreamChunkSize = maxStreamChunkSize + 1
+	if err := cfg.validate(); err == nil {
+		t.Fatal("expected excessive stream chunk size to fail validation")
+	}
+
+	cfg = base()
+	cfg.AutoTuneInterval = time.Nanosecond
+	if err := cfg.validate(); err == nil {
+		t.Fatal("expected tiny auto-tune interval to fail validation")
+	}
+
+	cfg = base()
+	cfg.ScanSensitive = true
+	cfg.ContentScanMaxBytes = 0
+	if err := cfg.validate(); err == nil {
+		t.Fatal("expected unbounded sensitive content scan to fail validation")
+	}
+
+	cfg = base()
+	cfg.SensitiveWindowBytes = maxSensitiveWindowBytes + 1
+	if err := cfg.validate(); err == nil {
+		t.Fatal("expected excessive sensitive window size to fail validation")
+	}
+}

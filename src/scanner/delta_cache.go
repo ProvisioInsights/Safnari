@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -19,8 +20,11 @@ import (
 )
 
 const (
-	deltaCacheManifestName = "manifest.json"
-	deltaCacheChunkSize    = 256 * 1024
+	deltaCacheManifestName       = "manifest.json"
+	deltaCacheChunkSize          = 256 * 1024
+	maxDeltaCacheManifestBytes   = 16 * 1024 * 1024
+	maxDeltaCacheManifestEntries = 100000
+	maxDeltaCacheFileBytes       = 16 * 1024 * 1024
 )
 
 type deltaCacheManifest struct {
@@ -133,9 +137,15 @@ func (c *DeltaChunkCache) Load(path string, fingerprint string, readLimit int64)
 	if !ok {
 		return nil, false, nil
 	}
-	data, err := os.ReadFile(filepath.Join(c.dir, name))
+	if !validDeltaCacheEntryName(key, name) {
+		return nil, false, fmt.Errorf("invalid delta cache entry name for key %s", key)
+	}
+	data, err := readFileNoSymlink(filepath.Join(c.dir, name))
 	if err != nil {
 		return nil, false, err
+	}
+	if len(data) > maxDeltaCacheFileBytes {
+		return nil, false, fmt.Errorf("delta cache entry too large: %s", name)
 	}
 	var entry deltaCachedFile
 	if err := json.Unmarshal(data, &entry); err != nil {
@@ -161,7 +171,7 @@ func (c *DeltaChunkCache) Store(path string, entry *deltaCachedFile) error {
 	name := key + ".json"
 	target := filepath.Join(c.dir, name)
 	tmp := target + ".tmp"
-	if err := os.WriteFile(tmp, data, 0600); err != nil {
+	if err := writePrivateFileNoSymlink(tmp, data); err != nil {
 		return err
 	}
 	if err := os.Rename(tmp, target); err != nil {
@@ -181,15 +191,36 @@ func (c *DeltaChunkCache) Store(path string, entry *deltaCachedFile) error {
 
 func (c *DeltaChunkCache) loadManifest() error {
 	path := filepath.Join(c.dir, deltaCacheManifestName)
-	data, err := os.ReadFile(path)
+	info, err := os.Lstat(path)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil
 		}
 		return err
 	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		return fmt.Errorf("refusing to read delta manifest through symlink: %s", path)
+	}
+	if !info.Mode().IsRegular() {
+		return fmt.Errorf("refusing to read non-regular delta manifest: %s", path)
+	}
+	if info.Size() > maxDeltaCacheManifestBytes {
+		return fmt.Errorf("delta cache manifest too large: %d", info.Size())
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
 	if err := json.Unmarshal(data, &c.manifest); err != nil {
 		return err
+	}
+	if len(c.manifest.Entries) > maxDeltaCacheManifestEntries {
+		return fmt.Errorf("delta cache manifest has too many entries: %d", len(c.manifest.Entries))
+	}
+	for key, name := range c.manifest.Entries {
+		if !validDeltaCacheEntryName(key, name) {
+			return fmt.Errorf("invalid delta cache manifest entry for key %s", key)
+		}
 	}
 	c.filterDirty = true
 	return nil
@@ -200,7 +231,7 @@ func (c *DeltaChunkCache) saveManifestLocked() error {
 	if err != nil {
 		return err
 	}
-	if err := os.WriteFile(filepath.Join(c.dir, deltaCacheManifestName), data, 0600); err != nil {
+	if err := writePrivateFileNoSymlink(filepath.Join(c.dir, deltaCacheManifestName), data); err != nil {
 		return err
 	}
 	c.manifestDirty = false
@@ -287,6 +318,18 @@ func deltaCacheKey(path string) string {
 	cleaned := filepath.Clean(path)
 	sum := sha256.Sum256([]byte(cleaned))
 	return hex.EncodeToString(sum[:])
+}
+
+func validDeltaCacheEntryName(key string, name string) bool {
+	if len(key) != sha256.Size*2 {
+		return false
+	}
+	for _, ch := range key {
+		if !((ch >= '0' && ch <= '9') || (ch >= 'a' && ch <= 'f')) {
+			return false
+		}
+	}
+	return name == key+".json"
 }
 
 func deltaCacheFingerprint(cfg *config.Config, patterns map[string]*regexp.Regexp) string {

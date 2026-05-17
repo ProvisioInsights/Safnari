@@ -36,3 +36,25 @@ func TestWriteFlightRecorderWithoutStart(t *testing.T) {
 		t.Fatal("expected no file to be written when recorder is disabled")
 	}
 }
+
+func TestOpenPrivateFileNoSymlinkRejectsSymlink(t *testing.T) {
+	dir := t.TempDir()
+	victim := filepath.Join(dir, "victim.out")
+	if err := os.WriteFile(victim, []byte("keep"), 0600); err != nil {
+		t.Fatalf("write victim: %v", err)
+	}
+	link := filepath.Join(dir, "flight.out")
+	if err := os.Symlink(victim, link); err != nil {
+		t.Skipf("symlink unavailable: %v", err)
+	}
+	if _, err := openPrivateFileNoSymlink(link); err == nil {
+		t.Fatal("expected symlink target to be rejected")
+	}
+	data, err := os.ReadFile(victim)
+	if err != nil {
+		t.Fatalf("read victim: %v", err)
+	}
+	if string(data) != "keep" {
+		t.Fatalf("victim was modified: %q", string(data))
+	}
+}
