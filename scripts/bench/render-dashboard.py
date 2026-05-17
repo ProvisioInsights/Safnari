@@ -57,6 +57,7 @@ def parse_reports(out_dir: Path) -> tuple[dict, list[dict]]:
         lambda: defaultdict(list)
     )
     contexts: dict[str, dict[str, str]] = defaultdict(dict)
+    parsed_inputs: set[str] = set()
 
     for path in sorted(out_dir.glob("*.txt")):
         if path.name == "time-rss.txt":
@@ -76,6 +77,7 @@ def parse_reports(out_dir: Path) -> tuple[dict, list[dict]]:
             if not parsed:
                 continue
             bench_name, metrics = parsed
+            parsed_inputs.add(path.name)
             key = (path.name, f"{current_pkg}:{bench_name}" if current_pkg else bench_name)
             for metric, value in metrics.items():
                 sample_sets[key][metric].append(value)
@@ -99,15 +101,34 @@ def parse_reports(out_dir: Path) -> tuple[dict, list[dict]]:
         "go_version": shell_value(["go", "version"], out_dir),
         "commit": shell_value(["git", "rev-parse", "--short", "HEAD"], out_dir),
         "ref": shell_value(["git", "rev-parse", "--abbrev-ref", "HEAD"], out_dir),
-        "host_os": platform.system().lower(),
-        "host_arch": platform.machine(),
-        "inputs": sorted(path.name for path in out_dir.glob("*.txt")),
+        "host_os": first_context_value(contexts, "goos") or platform.system().lower(),
+        "host_arch": first_context_value(contexts, "goarch")
+        or normalize_arch(platform.machine()),
+        "inputs": sorted(parsed_inputs),
         "contexts": contexts,
     }
     for key in ("commit", "ref", "go_version", "host_os", "host_arch"):
-        if context.get(key) == "unknown" and existing_context.get(key):
+        if existing_context.get(key):
             context[key] = existing_context[key]
     return context, benchmark_rows
+
+
+def first_context_value(contexts: dict[str, dict[str, str]], key: str) -> str:
+    for name in sorted(contexts):
+        value = contexts[name].get(key)
+        if value:
+            return value
+    return ""
+
+
+def normalize_arch(value: str) -> str:
+    normalized = value.lower()
+    return {
+        "x86_64": "amd64",
+        "amd64": "amd64",
+        "aarch64": "arm64",
+        "arm64": "arm64",
+    }.get(normalized, normalized)
 
 
 def load_existing_context(out_dir: Path) -> dict:

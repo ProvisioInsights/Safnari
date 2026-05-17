@@ -224,7 +224,30 @@ jobs:
         run: |
           set -euo pipefail
           history_url="https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/metrics-history.jsonl"
-          curl -fsSL "$history_url" -o performance-dashboard/metrics-history.jsonl || touch performance-dashboard/metrics-history.jsonl
+          if ! history_status="$(curl -sSL -w '%{http_code}' -o performance-dashboard/metrics-history.jsonl "$history_url")"; then
+            echo "Failed to fetch existing benchmark history from $history_url" >&2
+            exit 1
+          fi
+          if [ "$history_status" = "404" ]; then
+            : > performance-dashboard/metrics-history.jsonl
+          elif [ "$history_status" -lt 200 ] || [ "$history_status" -ge 300 ]; then
+            echo "Failed to fetch existing benchmark history: HTTP $history_status" >&2
+            exit 1
+          fi
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+
+          path = Path("performance-dashboard/metrics-history.jsonl")
+          valid = []
+          for line in path.read_text(errors="replace").splitlines():
+              try:
+                  json.loads(line)
+              except json.JSONDecodeError:
+                  continue
+              valid.append(line)
+          path.write_text("\n".join(valid) + ("\n" if valid else ""))
+          PY
           jq -c . performance-dashboard/metrics.json >> performance-dashboard/metrics-history.jsonl
           tail -n 200 performance-dashboard/metrics-history.jsonl > performance-dashboard/metrics-history.tmp
           mv performance-dashboard/metrics-history.tmp performance-dashboard/metrics-history.jsonl
