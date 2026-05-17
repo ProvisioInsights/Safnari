@@ -193,7 +193,7 @@ func (c *Controller) dumpSlowScanArtifacts(now time.Time, progress int64, stalle
 	if err != nil {
 		return err
 	}
-	if err := os.WriteFile(eventPath, b, 0600); err != nil {
+	if err := writePrivateFileNoSymlink(eventPath, b); err != nil {
 		return err
 	}
 
@@ -222,7 +222,7 @@ func (c *Controller) writeProfile(name string, debug int) (string, error) {
 	}
 	ts := c.nowFn().UTC().Format("20060102-150405.000")
 	path := filepath.Join(c.dir, fmt.Sprintf("safnari-%s-profile-%s.pprof", name, ts))
-	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0600)
+	f, err := openPrivateFileNoSymlink(path)
 	if err != nil {
 		return "", err
 	}

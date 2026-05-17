@@ -40,7 +40,7 @@ func ScanFiles(ctx context.Context, cfg *config.Config, metrics *output.Metrics,
 			logger.Warnf("Invalid last scan time: %v", err)
 		}
 	} else if cfg.DeltaScan && cfg.LastScanFile != "" {
-		data, err := os.ReadFile(cfg.LastScanFile)
+		data, err := readFileNoSymlink(cfg.LastScanFile)
 		if err == nil {
 			t, err := time.Parse(time.RFC3339, strings.TrimSpace(string(data)))
 			if err == nil {
@@ -253,7 +253,7 @@ func ScanFiles(ctx context.Context, cfg *config.Config, metrics *output.Metrics,
 		metrics.TotalFiles = metrics.FilesScanned
 	}
 	if cfg.DeltaScan && cfg.LastScanFile != "" {
-		if err := os.WriteFile(cfg.LastScanFile, []byte(time.Now().UTC().Format(time.RFC3339)), 0600); err != nil {
+		if err := writePrivateFileNoSymlink(cfg.LastScanFile, []byte(time.Now().UTC().Format(time.RFC3339))); err != nil {
 			logger.Warnf("Failed to write last scan time: %v", err)
 		}
 	}

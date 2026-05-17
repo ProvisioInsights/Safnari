@@ -3,6 +3,7 @@ package update
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"regexp"
 	"strconv"
@@ -15,7 +16,10 @@ type releaseInfo struct {
 	Body    string `json:"body"`
 }
 
-const releaseURL = "https://api.github.com/repos/ProvisioInsights/Safnari/releases/latest"
+const (
+	releaseURL          = "https://api.github.com/repos/ProvisioInsights/Safnari/releases/latest"
+	maxReleaseBodyBytes = 1 << 20
+)
 
 var datedReleasePattern = regexp.MustCompile(`^safnari-\d{8}[a-z]?$`)
 
@@ -34,7 +38,7 @@ func checkForUpdateURL(current, url string) (string, string, bool, error) {
 		return "", "", false, fmt.Errorf("unexpected status: %s", resp.Status)
 	}
 	var info releaseInfo
-	if err := json.NewDecoder(resp.Body).Decode(&info); err != nil {
+	if err := json.NewDecoder(io.LimitReader(resp.Body, maxReleaseBodyBytes)).Decode(&info); err != nil {
 		return "", "", false, err
 	}
 	latest := strings.TrimPrefix(info.TagName, "v")

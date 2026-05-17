@@ -6,8 +6,14 @@ package scanner
 import (
 	"encoding/base64"
 	"errors"
+	"fmt"
 
 	"golang.org/x/sys/unix"
+)
+
+const (
+	maxXattrListBytes = 1 << 20
+	maxXattrEntries   = 4096
 )
 
 func getXattrs(path string, maxValueSize int) (map[string]string, error) {
@@ -20,6 +26,9 @@ func getXattrs(path string, maxValueSize int) (map[string]string, error) {
 	}
 	if size <= 0 {
 		return nil, nil
+	}
+	if size > maxXattrListBytes {
+		return nil, fmt.Errorf("xattr list too large: %d", size)
 	}
 	buf := make([]byte, size)
 	n, err := unix.Listxattr(path, buf)
@@ -35,6 +44,9 @@ func getXattrs(path string, maxValueSize int) (map[string]string, error) {
 		}
 		name := string(buf[:i])
 		if name != "" {
+			if len(result) >= maxXattrEntries {
+				return nil, fmt.Errorf("too many xattrs")
+			}
 			val, _ := readXattrValue(path, name, maxValueSize)
 			if val != "" {
 				result[name] = val

@@ -48,7 +48,7 @@ jobs:
         id: gitleaks
         run: |
           set +e
-          gitleaks dir . --report-format sarif --report-path gitleaks-results.sarif
+          gitleaks dir . --redact=100 --report-format sarif --report-path gitleaks-results.sarif
           exit_code=$?
           echo "exit_code=$exit_code" >> "$GITHUB_OUTPUT"
           exit 0

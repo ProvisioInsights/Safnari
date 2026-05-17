@@ -16,7 +16,10 @@ func GetLocalDrives() ([]string, error) {
 	for i := uint(0); i < 26; i++ {
 		if driveBits&(1<<i) != 0 {
 			driveLetter := string('A' + rune(i))
-			drives = append(drives, driveLetter+":\\")
+			root := driveLetter + ":\\"
+			if windows.GetDriveType(windows.StringToUTF16Ptr(root)) == windows.DRIVE_FIXED {
+				drives = append(drives, root)
+			}
 		}
 	}
 	return drives, nil

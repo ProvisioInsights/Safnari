@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -15,6 +16,8 @@ import (
 	"golang.org/x/sys/windows/registry"
 	"golang.org/x/sys/windows/svc"
 )
+
+const trustedCommandPath = `C:\Windows\System32;C:\Windows\System32\wbem;C:\Windows\System32\WindowsPowerShell\v1.0;C:\Windows`
 
 func gatherOSVersion(sysInfo *SystemInfo) error {
 	out, err := runCommandOutput("cmd", "/C", "ver")
@@ -137,9 +140,44 @@ func gatherRunningServices(sysInfo *SystemInfo) error {
 }
 
 func safeCommand(ctx context.Context, name string, args ...string) *exec.Cmd {
-	cmd := exec.CommandContext(ctx, name, args...)
-	cmd.Env = append(os.Environ(), "PATH=C:\\Windows\\System32;C:\\Windows")
+	resolvedName := resolveTrustedCommand(name, trustedCommandPath)
+	cmd := exec.CommandContext(ctx, resolvedName, args...)
+	cmd.Env = withTrustedPath(os.Environ(), trustedCommandPath)
 	return cmd
+}
+
+func resolveTrustedCommand(name, trustedPath string) string {
+	if filepath.IsAbs(name) {
+		return name
+	}
+	for _, dir := range filepath.SplitList(trustedPath) {
+		if dir == "" {
+			continue
+		}
+		candidates := []string{filepath.Join(dir, name)}
+		if filepath.Ext(name) == "" {
+			candidates = append(candidates, filepath.Join(dir, name+".exe"))
+		}
+		for _, candidate := range candidates {
+			info, err := os.Stat(candidate)
+			if err != nil || info.IsDir() {
+				continue
+			}
+			return candidate
+		}
+	}
+	return filepath.Join(`C:\__safnari_command_not_found__`, name)
+}
+
+func withTrustedPath(env []string, trustedPath string) []string {
+	out := make([]string, 0, len(env)+1)
+	for _, item := range env {
+		if strings.HasPrefix(strings.ToUpper(item), "PATH=") {
+			continue
+		}
+		out = append(out, item)
+	}
+	return append(out, "PATH="+trustedPath)
 }
 
 func gatherUsers(sysInfo *SystemInfo) error {

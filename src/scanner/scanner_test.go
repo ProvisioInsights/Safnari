@@ -631,6 +631,102 @@ func TestTraversalDiscoversExpectedSet(t *testing.T) {
 	}
 }
 
+func TestProcessFileSkipsSymlinkInsideScanRoot(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlink creation requires elevated privileges on many Windows systems")
+	}
+	root := t.TempDir()
+	outsideDir := t.TempDir()
+	outside := filepath.Join(outsideDir, "outside.txt")
+	if err := os.WriteFile(outside, []byte("outside-secret@example.com"), 0600); err != nil {
+		t.Fatalf("write outside file: %v", err)
+	}
+	link := filepath.Join(root, "link.txt")
+	if err := os.Symlink(outside, link); err != nil {
+		t.Skipf("symlink unavailable: %v", err)
+	}
+	outputPath := filepath.Join(root, "out.ndjson")
+	cfg := &config.Config{
+		StartPaths:           []string{root},
+		ScanFiles:            true,
+		ScanSensitive:        true,
+		OutputFileName:       outputPath,
+		OutputFormat:         "json",
+		CollectXattrs:        false,
+		CollectACL:           false,
+		RedactSensitive:      "mask",
+		ContentScanMaxBytes:  defaultContentScanMaxBytes,
+		SensitiveEngine:      "auto",
+		SensitiveLongtail:    "sampled",
+		SensitiveMatchMode:   "all",
+		SensitiveWindowBytes: 4096,
+	}
+	writer, err := output.New(cfg, &systeminfo.SystemInfo{}, &output.Metrics{})
+	if err != nil {
+		t.Fatalf("new writer: %v", err)
+	}
+	if err := ProcessFile(context.Background(), link, cfg, writer, GetPatterns([]string{"email"}, nil, nil)); err != nil {
+		t.Fatalf("process symlink: %v", err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatalf("close writer: %v", err)
+	}
+	if records := readFileRecords(t, outputPath); len(records) != 0 {
+		t.Fatalf("expected symlink to be skipped, got records: %+v", records)
+	}
+}
+
+func TestScanFilesDoesNotWriteLastScanSymlink(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlink creation requires elevated privileges on many Windows systems")
+	}
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "file.txt"), []byte("hello"), 0600); err != nil {
+		t.Fatalf("write input: %v", err)
+	}
+	victim := filepath.Join(t.TempDir(), "victim.txt")
+	if err := os.WriteFile(victim, []byte("keep"), 0600); err != nil {
+		t.Fatalf("write victim: %v", err)
+	}
+	lastScan := filepath.Join(root, ".safnari_last_scan")
+	if err := os.Symlink(victim, lastScan); err != nil {
+		t.Skipf("symlink unavailable: %v", err)
+	}
+	cfg := &config.Config{
+		StartPaths:           []string{root},
+		ScanFiles:            true,
+		OutputFileName:       filepath.Join(root, "out.ndjson"),
+		OutputFormat:         "json",
+		CollectXattrs:        false,
+		CollectACL:           false,
+		DeltaScan:            true,
+		DeltaCacheMode:       "mtime",
+		LastScanFile:         lastScan,
+		ContentScanMaxBytes:  defaultContentScanMaxBytes,
+		SensitiveEngine:      "auto",
+		SensitiveLongtail:    "sampled",
+		SensitiveMatchMode:   "all",
+		SensitiveWindowBytes: 4096,
+	}
+	writer, err := output.New(cfg, &systeminfo.SystemInfo{}, &output.Metrics{})
+	if err != nil {
+		t.Fatalf("new writer: %v", err)
+	}
+	if err := ScanFiles(context.Background(), cfg, &output.Metrics{}, writer); err != nil {
+		t.Fatalf("scan files: %v", err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatalf("close writer: %v", err)
+	}
+	data, err := os.ReadFile(victim)
+	if err != nil {
+		t.Fatalf("read victim: %v", err)
+	}
+	if string(data) != "keep" {
+		t.Fatalf("last scan symlink target was modified: %q", string(data))
+	}
+}
+
 func collectWalkedFiles(t *testing.T, root string, cfg *config.Config) map[string]bool {
 	t.Helper()
 	matcher := utils.NewPatternMatcher(cfg.IncludePatterns, cfg.ExcludePatterns)

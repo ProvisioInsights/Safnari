@@ -55,10 +55,14 @@ func TestResolveOtelEndpoint(t *testing.T) {
 
 func TestSanitizePayloadFileAndProcess(t *testing.T) {
 	filePayload := map[string]interface{}{
-		"path":           "/tmp/secret.txt",
-		"sensitive_data": map[string]interface{}{"email": []string{"a@example.com"}},
-		"search_hits":    map[string]interface{}{"token": 1},
-		"name":           "secret.txt",
+		"path":                   "/tmp/secret.txt",
+		"sensitive_data":         map[string]interface{}{"email": []string{"a@example.com"}},
+		"search_hits":            map[string]interface{}{"token": 1},
+		"metadata":               map[string]interface{}{"author": "private"},
+		"xattrs":                 map[string]interface{}{"user.secret": "private"},
+		"acl":                    "private-acl",
+		"alternate_data_streams": []string{"secret"},
+		"name":                   "secret.txt",
 	}
 	fileSanitized, ok := sanitizePayload("file", filePayload, otelPolicy{}).(map[string]interface{})
 	if !ok {
@@ -72,6 +76,11 @@ func TestSanitizePayloadFileAndProcess(t *testing.T) {
 	}
 	if _, ok := fileSanitized["search_hits"]; ok {
 		t.Fatal("expected search_hits to be stripped")
+	}
+	for _, key := range []string{"metadata", "xattrs", "acl", "alternate_data_streams"} {
+		if _, ok := fileSanitized[key]; ok {
+			t.Fatalf("expected %s to be stripped", key)
+		}
 	}
 	if _, ok := filePayload["path"]; !ok {
 		t.Fatal("expected original file payload to remain unchanged")
@@ -127,6 +136,9 @@ func TestSemanticAttributesFile(t *testing.T) {
 		"size":           int64(42),
 		"attributes":     []string{"hidden", "read-only"},
 		"hashes":         map[string]string{"sha256": "abc123"},
+		"metadata":       map[string]interface{}{"author": "private"},
+		"xattrs":         map[string]interface{}{"user.secret": "private"},
+		"acl":            "private-acl",
 		"sensitive_data": map[string]interface{}{"email": []string{"a@example.com"}},
 	}
 
@@ -146,6 +158,9 @@ func TestSemanticAttributesFile(t *testing.T) {
 	if _, ok := findAttr(attrs, "safnari.file.sensitive_data"); !ok {
 		t.Fatal("expected sensitive data semantic attribute when enabled")
 	}
+	if _, ok := findAttr(attrs, "safnari.file.metadata"); !ok {
+		t.Fatal("expected metadata semantic attribute when sensitive export is enabled")
+	}
 
 	attrsNoPaths := semanticAttributes("file", payload, otelPolicy{includePaths: false})
 	if _, ok := findAttr(attrsNoPaths, string(semconv.FilePathKey)); ok {
@@ -153,6 +168,11 @@ func TestSemanticAttributesFile(t *testing.T) {
 	}
 	if _, ok := findAttr(attrsNoPaths, "safnari.file.sensitive_data"); ok {
 		t.Fatal("did not expect sensitive data semantic attribute when sensitive export is disabled")
+	}
+	for _, key := range []string{"safnari.file.metadata", "safnari.file.xattrs", "safnari.file.acl"} {
+		if _, ok := findAttr(attrsNoPaths, key); ok {
+			t.Fatalf("did not expect %s when sensitive export is disabled", key)
+		}
 	}
 }
 

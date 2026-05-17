@@ -4,6 +4,7 @@
 package systeminfo
 
 import (
+	"context"
 	"errors"
 	"os"
 	"path/filepath"
@@ -70,6 +71,23 @@ func TestAppendParsedCronTasks(t *testing.T) {
 	want := []string{"/tmp/existing-task", "@hourly /usr/bin/do"}
 	if !reflect.DeepEqual(out, want) {
 		t.Fatalf("unexpected appended cron tasks: got=%v want=%v", out, want)
+	}
+}
+
+func TestSafeCommandResolvesAgainstTrustedPath(t *testing.T) {
+	tmpDir := t.TempDir()
+	fake := filepath.Join(tmpDir, "sh")
+	if err := os.WriteFile(fake, []byte("#!/bin/sh\nexit 99\n"), 0700); err != nil {
+		t.Fatalf("write fake sh: %v", err)
+	}
+	t.Setenv("PATH", tmpDir)
+
+	cmd := safeCommand(context.Background(), "sh", "-c", "true")
+	if filepath.Dir(cmd.Path) == tmpDir {
+		t.Fatalf("safeCommand resolved executable from untrusted PATH: %s", cmd.Path)
+	}
+	if cmd.Path == "sh" {
+		t.Fatalf("safeCommand left bare executable unresolved")
 	}
 }
 

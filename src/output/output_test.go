@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strconv"
 	"strings"
@@ -22,6 +23,33 @@ type ndjsonTestRecord struct {
 	RecordType    string          `json:"record_type"`
 	SchemaVersion string          `json:"schema_version"`
 	Payload       json.RawMessage `json:"payload"`
+}
+
+func TestOutputRejectsSymlinkTarget(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlink creation requires elevated privileges on many Windows systems")
+	}
+	dir := t.TempDir()
+	victim := filepath.Join(dir, "victim.txt")
+	if err := os.WriteFile(victim, []byte("keep"), 0600); err != nil {
+		t.Fatalf("write victim: %v", err)
+	}
+	link := filepath.Join(dir, "out.ndjson")
+	if err := os.Symlink(victim, link); err != nil {
+		t.Skipf("symlink unavailable: %v", err)
+	}
+
+	cfg := &config.Config{OutputFileName: link, OutputFormat: "json"}
+	if _, err := New(cfg, &systeminfo.SystemInfo{}, &Metrics{}); err == nil {
+		t.Fatal("expected symlink output target to be rejected")
+	}
+	data, err := os.ReadFile(victim)
+	if err != nil {
+		t.Fatalf("read victim: %v", err)
+	}
+	if string(data) != "keep" {
+		t.Fatalf("victim was modified: %q", string(data))
+	}
 }
 
 func TestOutputLifecycle(t *testing.T) {

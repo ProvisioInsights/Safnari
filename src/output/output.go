@@ -123,7 +123,7 @@ func (w *Writer) openFile() error {
 	if w.index > 0 {
 		name = fmt.Sprintf("%s.%d%s", w.base, w.index, w.ext)
 	}
-	f, err := os.OpenFile(name, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0600)
+	f, err := openPrivateFileNoSymlink(name)
 	if err != nil {
 		return err
 	}
