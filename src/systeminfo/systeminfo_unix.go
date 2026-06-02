@@ -334,21 +334,14 @@ func trustedExecutablePath(pathList string) string {
 }
 
 func isTrustedExecutable(path string, euid int) bool {
-	info, err := os.Lstat(path)
-	if err != nil || info.IsDir() {
+	resolvedPath, err := filepath.EvalSymlinks(path)
+	if err != nil {
 		return false
 	}
-	if info.Mode()&os.ModeSymlink != 0 {
-		if !isTrustedPathChain(filepath.Dir(path), euid) {
-			return false
-		}
-		resolvedPath, err := filepath.EvalSymlinks(path)
-		if err != nil {
-			return false
-		}
-		return isTrustedExecutableFile(resolvedPath, euid)
+	if !isTrustedDirectoryPath(filepath.Dir(path), euid) {
+		return false
 	}
-	return isTrustedExecutableFile(path, euid)
+	return isTrustedExecutableFile(resolvedPath, euid)
 }
 
 func isTrustedExecutableFile(path string, euid int) bool {
@@ -363,8 +356,25 @@ func isTrustedExecutableFile(path string, euid int) bool {
 }
 
 func isTrustedDirectory(path string, euid int) bool {
+	return isTrustedDirectoryPath(path, euid)
+}
+
+func isTrustedDirectoryPath(path string, euid int) bool {
 	info, err := os.Lstat(path)
-	if err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
+	if err != nil {
+		return false
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		if !isTrustedPathChain(filepath.Dir(path), euid) {
+			return false
+		}
+		resolvedPath, err := filepath.EvalSymlinks(path)
+		if err != nil {
+			return false
+		}
+		return isTrustedPathChain(resolvedPath, euid)
+	}
+	if !info.IsDir() {
 		return false
 	}
 	if !isTrustedOwnerAndMode(info, euid) {

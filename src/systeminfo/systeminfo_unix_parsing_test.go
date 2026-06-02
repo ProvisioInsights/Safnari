@@ -142,6 +142,27 @@ func TestIsTrustedExecutableAllowsTrustedSymlinkTarget(t *testing.T) {
 	}
 }
 
+func TestResolveTrustedCommandAllowsTrustedSymlinkDirectory(t *testing.T) {
+	tmpDir := trustedTempDir(t)
+	realBin := filepath.Join(tmpDir, "real-bin")
+	if err := os.Mkdir(realBin, 0700); err != nil {
+		t.Fatalf("mkdir real bin: %v", err)
+	}
+	target := filepath.Join(realBin, "sh")
+	if err := os.WriteFile(target, []byte("#!/bin/sh\nexit 0\n"), 0700); err != nil {
+		t.Fatalf("write target: %v", err)
+	}
+	linkBin := filepath.Join(tmpDir, "bin")
+	if err := os.Symlink(realBin, linkBin); err != nil {
+		t.Fatalf("symlink bin: %v", err)
+	}
+
+	got := resolveTrustedCommand("sh", linkBin)
+	if got == "sh" || strings.Contains(got, unresolvedCommandDir) {
+		t.Fatalf("expected trusted symlink directory command to resolve, got %s", got)
+	}
+}
+
 func TestIsTrustedExecutableRejectsNonRegularFile(t *testing.T) {
 	tmpDir := trustedTempDir(t)
 	fifo := filepath.Join(tmpDir, "fifo")
