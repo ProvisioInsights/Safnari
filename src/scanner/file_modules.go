@@ -7,6 +7,7 @@ import (
 	"os"
 	"regexp"
 	"sort"
+	"strings"
 	"time"
 
 	"safnari/config"
@@ -192,6 +193,13 @@ func sampledSensitiveCoverageApplies(fc *FileContext, patternNames []string) boo
 		return false
 	}
 	if fc.Cfg.SensitiveLongtail != "sampled" {
+		return false
+	}
+	engine := strings.ToLower(strings.TrimSpace(fc.Cfg.SensitiveEngine))
+	if engine == "" {
+		engine = "auto"
+	}
+	if engine == "deterministic" {
 		return false
 	}
 	windowBytes := fc.Cfg.SensitiveWindowBytes

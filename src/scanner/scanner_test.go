@@ -753,6 +753,54 @@ func TestSampledLongtailAddsCoverageWarning(t *testing.T) {
 	}
 }
 
+func TestSampledLongtailDeterministicDoesNotWarnForRegexOnlyPattern(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "long.txt")
+	content := []byte(strings.Repeat("a", 20000))
+	if err := os.WriteFile(path, content, 0600); err != nil {
+		t.Fatalf("write long file: %v", err)
+	}
+	outputPath := filepath.Join(root, "out.ndjson")
+	cfg := &config.Config{
+		StartPaths:           []string{root},
+		ScanFiles:            true,
+		ScanSensitive:        true,
+		OutputFileName:       outputPath,
+		OutputFormat:         "json",
+		CollectXattrs:        false,
+		CollectACL:           false,
+		RedactSensitive:      "none",
+		ContentScanMaxBytes:  defaultContentScanMaxBytes,
+		SensitiveEngine:      "deterministic",
+		SensitiveLongtail:    "sampled",
+		SensitiveMatchMode:   "all",
+		SensitiveWindowBytes: 4096,
+	}
+	writer, err := output.New(cfg, &systeminfo.SystemInfo{}, &output.Metrics{})
+	if err != nil {
+		t.Fatalf("new writer: %v", err)
+	}
+	patterns := GetPatterns([]string{"email"}, map[string]string{"email": `SENTINEL[0-9]+`}, nil)
+	if err := ProcessFile(context.Background(), path, cfg, writer, patterns); err != nil {
+		t.Fatalf("process deterministic long file: %v", err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatalf("close writer: %v", err)
+	}
+	records := readFileRecords(t, outputPath)
+	if len(records) != 1 {
+		t.Fatalf("expected one baseline file record, got %d", len(records))
+	}
+	if records[0].SensitiveDataTruncated {
+		t.Fatal("did not expect deterministic regex-only scan to mark sampled sensitive data truncated")
+	}
+	for _, warning := range records[0].CollectionWarnings {
+		if strings.Contains(warning, "sensitive-longtail=sampled inspected selected windows") {
+			t.Fatalf("did not expect sampled regex coverage warning in deterministic mode: %q", warning)
+		}
+	}
+}
+
 func TestScanFilesDoesNotWriteLastScanSymlink(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("symlink creation requires elevated privileges on many Windows systems")
