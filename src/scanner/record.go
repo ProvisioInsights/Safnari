@@ -40,6 +40,7 @@ func (r *FileRecord) HasSignalData() bool {
 		len(r.Xattrs) > 0 ||
 		r.ACL != "" ||
 		len(r.AlternateDataStreams) > 0 ||
+		r.SensitiveDataTruncated ||
 		r.ContentScanTruncated ||
 		len(r.CollectionWarnings) > 0
 }

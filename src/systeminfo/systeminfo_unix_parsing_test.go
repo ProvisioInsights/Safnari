@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"runtime"
+	"strings"
 	"testing"
 )
 
@@ -88,6 +89,29 @@ func TestSafeCommandResolvesAgainstTrustedPath(t *testing.T) {
 	}
 	if cmd.Path == "sh" {
 		t.Fatalf("safeCommand left bare executable unresolved")
+	}
+}
+
+func TestResolveTrustedCommandSkipsRootUnsafeDirectory(t *testing.T) {
+	tmpDir := t.TempDir()
+	unsafeDir := filepath.Join(tmpDir, "unsafe")
+	if err := os.Mkdir(unsafeDir, 0777); err != nil {
+		t.Fatalf("mkdir unsafe: %v", err)
+	}
+	if err := os.Chmod(unsafeDir, 0777); err != nil {
+		t.Fatalf("chmod unsafe: %v", err)
+	}
+	unsafeCmd := filepath.Join(unsafeDir, "sh")
+	if err := os.WriteFile(unsafeCmd, []byte("#!/bin/sh\nexit 1\n"), 0755); err != nil {
+		t.Fatalf("write unsafe cmd: %v", err)
+	}
+
+	got := resolveTrustedCommand("sh", unsafeDir+string(os.PathListSeparator)+"/bin")
+	if got == unsafeCmd || got == "sh" || strings.Contains(got, "__safnari_command_not_found__") {
+		t.Fatalf("expected resolver to skip unsafe command and find trusted shell, got %s", got)
+	}
+	if isTrustedExecutable(unsafeCmd, 0) {
+		t.Fatal("expected root trust check to reject command under writable directory")
 	}
 }
 

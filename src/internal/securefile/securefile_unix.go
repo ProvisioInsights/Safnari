@@ -29,6 +29,10 @@ func OpenPrivateNoSymlink(path string) (*os.File, error) {
 		_ = unix.Close(fd)
 		return nil, err
 	}
+	if err := unix.Fchmod(fd, 0600); err != nil {
+		_ = unix.Close(fd)
+		return nil, err
+	}
 	return os.NewFile(uintptr(fd), path), nil
 }
 

@@ -2,6 +2,7 @@ package scanner
 
 import (
 	"context"
+	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -16,9 +17,12 @@ type walker interface {
 type fastWalker struct{}
 
 func (w fastWalker) Walk(ctx context.Context, startPath string, fn fs.WalkDirFunc) error {
-	info, err := os.Stat(startPath)
+	info, err := os.Lstat(startPath)
 	if err != nil {
 		return fn(startPath, nil, err)
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		return fn(startPath, nil, fmt.Errorf("refusing symlink scan root: %s", startPath))
 	}
 	root := fs.FileInfoToDirEntry(info)
 	type item struct {

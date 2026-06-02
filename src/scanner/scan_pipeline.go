@@ -173,7 +173,7 @@ func newStreamSensitiveConsumer(
 	patternNames []string,
 	limit int64,
 ) *streamSensitiveConsumer {
-	critical := filterCriticalPatternNames(patternNames, patterns)
+	critical := filterBuiltinCriticalPatternNames(patternNames, patterns)
 	return &streamSensitiveConsumer{
 		cfg:                  cfg,
 		patterns:             patterns,
@@ -296,7 +296,7 @@ func (c *streamSensitiveConsumer) needsRegexBuffer() bool {
 		return false
 	}
 	for _, name := range c.patternNames {
-		if !sensitive.IsCriticalPattern(name) {
+		if !isBuiltinCriticalPattern(name, c.patterns) {
 			return true
 		}
 	}
@@ -309,7 +309,7 @@ func (c *streamSensitiveConsumer) Finalize() error {
 	}
 	nonCritical := make([]string, 0, len(c.patternNames))
 	for _, name := range c.patternNames {
-		if sensitive.IsCriticalPattern(name) {
+		if isBuiltinCriticalPattern(name, c.patterns) {
 			continue
 		}
 		nonCritical = append(nonCritical, name)

@@ -180,6 +180,41 @@ func (fc *FileContext) addWarning(msg string) {
 	fc.warnings = append(fc.warnings, msg)
 }
 
+func (fc *FileContext) noteSampledSensitiveCoverage(patternNames []string) {
+	if !sampledSensitiveCoverageApplies(fc, patternNames) {
+		return
+	}
+	fc.addWarning("sensitive-longtail=sampled inspected selected windows for regex-only sensitive patterns; use sensitive-longtail=full for complete regex coverage")
+}
+
+func sampledSensitiveCoverageApplies(fc *FileContext, patternNames []string) bool {
+	if fc == nil || fc.Cfg == nil || fc.Info == nil || len(fc.SensitivePatterns) == 0 {
+		return false
+	}
+	if fc.Cfg.SensitiveLongtail != "sampled" {
+		return false
+	}
+	windowBytes := fc.Cfg.SensitiveWindowBytes
+	if windowBytes <= 0 {
+		windowBytes = 4096
+	}
+	if fc.Info.Size() <= int64(windowBytes*3) {
+		return false
+	}
+	if len(patternNames) == 0 {
+		patternNames = make([]string, 0, len(fc.SensitivePatterns))
+		for name := range fc.SensitivePatterns {
+			patternNames = append(patternNames, name)
+		}
+	}
+	for _, name := range patternNames {
+		if !isBuiltinCriticalPattern(name, fc.SensitivePatterns) {
+			return true
+		}
+	}
+	return false
+}
+
 func (fc *FileContext) Source() (*ChunkSource, error) {
 	if fc == nil {
 		return nil, fmt.Errorf("file context is nil")
@@ -425,6 +460,7 @@ func (m sensitiveModule) Collect(ctx context.Context, fc *FileContext, data *Fil
 	if !fc.ShouldSearchContent() || len(fc.SensitivePatterns) == 0 {
 		return nil
 	}
+	fc.noteSampledSensitiveCoverage(m.patternNames)
 	results, err := fc.EnsureContentAnalysis()
 	if err != nil {
 		return err
@@ -441,6 +477,9 @@ func (m sensitiveModule) Collect(ctx context.Context, fc *FileContext, data *Fil
 		if sensitiveMatchesMayBeTruncated(counts, effectiveSensitivePerTypeLimit(fc.Cfg), fc.Cfg.SensitiveMaxTotal) || sensitiveMatchMode(fc.Cfg) == "first" {
 			data.SensitiveDataTruncated = true
 		}
+	}
+	if sampledSensitiveCoverageApplies(fc, m.patternNames) {
+		data.SensitiveDataTruncated = true
 	}
 	return nil
 }

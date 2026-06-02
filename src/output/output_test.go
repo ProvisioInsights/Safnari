@@ -52,6 +52,33 @@ func TestOutputRejectsSymlinkTarget(t *testing.T) {
 	}
 }
 
+func TestOutputTightensExistingFilePermissions(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("unix file mode regression")
+	}
+	dir := t.TempDir()
+	path := filepath.Join(dir, "out.ndjson")
+	if err := os.WriteFile(path, []byte("old"), 0644); err != nil {
+		t.Fatalf("write existing output: %v", err)
+	}
+
+	cfg := &config.Config{OutputFileName: path, OutputFormat: "json"}
+	w, err := New(cfg, &systeminfo.SystemInfo{}, &Metrics{})
+	if err != nil {
+		t.Fatalf("new writer: %v", err)
+	}
+	if err := w.Close(); err != nil {
+		t.Fatalf("close writer: %v", err)
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("stat output: %v", err)
+	}
+	if got := info.Mode().Perm(); got != 0600 {
+		t.Fatalf("expected output mode 0600, got %o", got)
+	}
+}
+
 func TestOutputLifecycle(t *testing.T) {
 	tmp, err := os.CreateTemp("", "out*.ndjson")
 	if err != nil {
