@@ -21,10 +21,21 @@ func OpenPrivateNoSymlink(path string) (*os.File, error) {
 	}
 	defer cleanup()
 
-	fd, err := unix.Openat(dirfd, base, unix.O_WRONLY|unix.O_CREAT|unix.O_TRUNC|unix.O_CLOEXEC|unix.O_NOFOLLOW, 0600)
+	fd, err := unix.Openat(dirfd, base, unix.O_WRONLY|unix.O_CREAT|unix.O_EXCL|unix.O_CLOEXEC|unix.O_NOFOLLOW, 0600)
 	if err != nil {
-		return nil, err
+		if err != unix.EEXIST {
+			return nil, err
+		}
+		fd, err = unix.Openat(dirfd, base, unix.O_WRONLY|unix.O_CLOEXEC|unix.O_NOFOLLOW, 0)
+		if err != nil {
+			return nil, err
+		}
+		return privateWritableFile(fd, path, true)
 	}
+	return privateWritableFile(fd, path, false)
+}
+
+func privateWritableFile(fd int, path string, truncate bool) (*os.File, error) {
 	if err := ensureRegular(fd, path); err != nil {
 		_ = unix.Close(fd)
 		return nil, err
@@ -32,6 +43,16 @@ func OpenPrivateNoSymlink(path string) (*os.File, error) {
 	if err := unix.Fchmod(fd, 0600); err != nil {
 		_ = unix.Close(fd)
 		return nil, err
+	}
+	if truncate {
+		if err := unix.Ftruncate(fd, 0); err != nil {
+			_ = unix.Close(fd)
+			return nil, err
+		}
+		if _, err := unix.Seek(fd, 0, io.SeekStart); err != nil {
+			_ = unix.Close(fd)
+			return nil, err
+		}
 	}
 	return os.NewFile(uintptr(fd), path), nil
 }

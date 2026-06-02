@@ -270,6 +270,17 @@ func TestShouldChunkCacheSensitiveAllCriticalIgnoresLongtail(t *testing.T) {
 	}
 }
 
+func TestShouldChunkCacheSensitiveRejectsCustomCriticalOverride(t *testing.T) {
+	cfg := &config.Config{
+		SensitiveLongtail:  "sampled",
+		SensitiveMatchMode: "all",
+	}
+	patterns := GetPatterns([]string{"email"}, map[string]string{"email": `SENTINEL[0-9]+`}, nil)
+	if shouldChunkCacheSensitive(cfg, patterns) {
+		t.Fatal("expected custom critical override to bypass chunk-sensitive cache reuse")
+	}
+}
+
 func TestDeltaCacheFingerprintIncludesPatternBodies(t *testing.T) {
 	cfg := &config.Config{
 		SearchTerms:       []string{"ALPHA"},
