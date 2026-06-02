@@ -102,6 +102,15 @@ func TestCustomSensitivePattern(t *testing.T) {
 	}
 }
 
+func TestCustomCriticalPatternUsesCustomRegex(t *testing.T) {
+	content := []byte("marker SENTINEL123")
+	patterns := GetPatterns([]string{"email"}, map[string]string{"email": `SENTINEL[0-9]+`}, nil)
+	matches, _ := scanForSensitiveDataAdvanced(content, patterns, 100, 1000, "auto", "full", 4096, []string{"email"})
+	if got := matches["email"]; len(got) != 1 || got[0] != "SENTINEL123" {
+		t.Fatalf("expected custom critical-name regex match, got %v", got)
+	}
+}
+
 func TestInternationalSensitivePatterns(t *testing.T) {
 	tmp, _ := os.CreateTemp("", "intl*.txt")
 	content := "IBAN GB29NWBK60161331926819 Aadhaar 1234 5678 9012"
@@ -673,6 +682,122 @@ func TestProcessFileSkipsSymlinkInsideScanRoot(t *testing.T) {
 	}
 	if records := readFileRecords(t, outputPath); len(records) != 0 {
 		t.Fatalf("expected symlink to be skipped, got records: %+v", records)
+	}
+}
+
+func TestWalkerRejectsSymlinkScanRoot(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlink creation requires elevated privileges on many Windows systems")
+	}
+	outside := t.TempDir()
+	if err := os.WriteFile(filepath.Join(outside, "secret.txt"), []byte("secret"), 0600); err != nil {
+		t.Fatalf("write outside file: %v", err)
+	}
+	root := filepath.Join(t.TempDir(), "rootlink")
+	if err := os.Symlink(outside, root); err != nil {
+		t.Skipf("symlink unavailable: %v", err)
+	}
+	cfg := &config.Config{}
+	discovered := collectWalkedFiles(t, root, cfg)
+	if len(discovered) != 0 {
+		t.Fatalf("expected symlink root to be rejected, got %v", discovered)
+	}
+}
+
+func TestSampledLongtailAddsCoverageWarning(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "long.txt")
+	content := []byte(strings.Repeat("a", 20000))
+	copy(content[6000:], []byte("DE89370400440532013000"))
+	if err := os.WriteFile(path, content, 0600); err != nil {
+		t.Fatalf("write long file: %v", err)
+	}
+	outputPath := filepath.Join(root, "out.ndjson")
+	cfg := &config.Config{
+		StartPaths:           []string{root},
+		ScanFiles:            true,
+		ScanSensitive:        true,
+		OutputFileName:       outputPath,
+		OutputFormat:         "json",
+		CollectXattrs:        false,
+		CollectACL:           false,
+		RedactSensitive:      "none",
+		ContentScanMaxBytes:  defaultContentScanMaxBytes,
+		SensitiveEngine:      "auto",
+		SensitiveLongtail:    "sampled",
+		SensitiveMatchMode:   "all",
+		SensitiveWindowBytes: 4096,
+	}
+	writer, err := output.New(cfg, &systeminfo.SystemInfo{}, &output.Metrics{})
+	if err != nil {
+		t.Fatalf("new writer: %v", err)
+	}
+	if err := ProcessFile(context.Background(), path, cfg, writer, GetPatterns([]string{"iban"}, nil, nil)); err != nil {
+		t.Fatalf("process long file: %v", err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatalf("close writer: %v", err)
+	}
+	records := readFileRecords(t, outputPath)
+	if len(records) != 1 {
+		t.Fatalf("expected one warning record, got %d", len(records))
+	}
+	if !records[0].SensitiveDataTruncated {
+		t.Fatal("expected sampled longtail record to be marked truncated")
+	}
+	if len(records[0].CollectionWarnings) == 0 {
+		t.Fatal("expected sampled longtail warning")
+	}
+	if len(records[0].SensitiveData) != 0 {
+		t.Fatalf("expected IBAN outside sampled windows to remain unmatched, got %v", records[0].SensitiveData)
+	}
+}
+
+func TestSampledLongtailDeterministicDoesNotWarnForRegexOnlyPattern(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "long.txt")
+	content := []byte(strings.Repeat("a", 20000))
+	if err := os.WriteFile(path, content, 0600); err != nil {
+		t.Fatalf("write long file: %v", err)
+	}
+	outputPath := filepath.Join(root, "out.ndjson")
+	cfg := &config.Config{
+		StartPaths:           []string{root},
+		ScanFiles:            true,
+		ScanSensitive:        true,
+		OutputFileName:       outputPath,
+		OutputFormat:         "json",
+		CollectXattrs:        false,
+		CollectACL:           false,
+		RedactSensitive:      "none",
+		ContentScanMaxBytes:  defaultContentScanMaxBytes,
+		SensitiveEngine:      "deterministic",
+		SensitiveLongtail:    "sampled",
+		SensitiveMatchMode:   "all",
+		SensitiveWindowBytes: 4096,
+	}
+	writer, err := output.New(cfg, &systeminfo.SystemInfo{}, &output.Metrics{})
+	if err != nil {
+		t.Fatalf("new writer: %v", err)
+	}
+	patterns := GetPatterns([]string{"email"}, map[string]string{"email": `SENTINEL[0-9]+`}, nil)
+	if err := ProcessFile(context.Background(), path, cfg, writer, patterns); err != nil {
+		t.Fatalf("process deterministic long file: %v", err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatalf("close writer: %v", err)
+	}
+	records := readFileRecords(t, outputPath)
+	if len(records) != 1 {
+		t.Fatalf("expected one baseline file record, got %d", len(records))
+	}
+	if records[0].SensitiveDataTruncated {
+		t.Fatal("did not expect deterministic regex-only scan to mark sampled sensitive data truncated")
+	}
+	for _, warning := range records[0].CollectionWarnings {
+		if strings.Contains(warning, "sensitive-longtail=sampled inspected selected windows") {
+			t.Fatalf("did not expect sampled regex coverage warning in deterministic mode: %q", warning)
+		}
 	}
 }
 

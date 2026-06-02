@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"reflect"
 	"runtime"
+	"strings"
+	"syscall"
 	"testing"
 )
 
@@ -89,6 +91,110 @@ func TestSafeCommandResolvesAgainstTrustedPath(t *testing.T) {
 	if cmd.Path == "sh" {
 		t.Fatalf("safeCommand left bare executable unresolved")
 	}
+}
+
+func TestResolveTrustedCommandSkipsRootUnsafeDirectory(t *testing.T) {
+	tmpDir := t.TempDir()
+	unsafeDir := filepath.Join(tmpDir, "unsafe")
+	if err := os.Mkdir(unsafeDir, 0777); err != nil {
+		t.Fatalf("mkdir unsafe: %v", err)
+	}
+	if err := os.Chmod(unsafeDir, 0777); err != nil {
+		t.Fatalf("chmod unsafe: %v", err)
+	}
+	unsafeCmd := filepath.Join(unsafeDir, "sh")
+	if err := os.WriteFile(unsafeCmd, []byte("#!/bin/sh\nexit 1\n"), 0755); err != nil {
+		t.Fatalf("write unsafe cmd: %v", err)
+	}
+
+	got := resolveTrustedCommand("sh", unsafeDir+string(os.PathListSeparator)+"/bin")
+	if got == unsafeCmd || got == "sh" || strings.Contains(got, "__safnari_command_not_found__") {
+		t.Fatalf("expected resolver to skip unsafe command and find trusted shell, got %s", got)
+	}
+	if isTrustedExecutable(unsafeCmd, 0) {
+		t.Fatal("expected root trust check to reject command under writable directory")
+	}
+}
+
+func TestResolveTrustedCommandUsesAbsoluteMissingSentinel(t *testing.T) {
+	got := resolveTrustedCommand("missing-command", "")
+	if !filepath.IsAbs(got) {
+		t.Fatalf("expected missing command sentinel to be absolute, got %s", got)
+	}
+	if filepath.Dir(got) != unresolvedCommandDir {
+		t.Fatalf("expected missing command under sentinel dir, got %s", got)
+	}
+}
+
+func TestIsTrustedExecutableAllowsTrustedSymlinkTarget(t *testing.T) {
+	tmpDir := trustedTempDir(t)
+	target := filepath.Join(tmpDir, "target-sh")
+	if err := os.WriteFile(target, []byte("#!/bin/sh\nexit 0\n"), 0700); err != nil {
+		t.Fatalf("write target: %v", err)
+	}
+	link := filepath.Join(tmpDir, "sh")
+	if err := os.Symlink(target, link); err != nil {
+		t.Fatalf("symlink target: %v", err)
+	}
+
+	if !isTrustedExecutable(link, os.Geteuid()) {
+		t.Fatalf("expected trusted symlink executable to be accepted: %s", link)
+	}
+}
+
+func TestResolveTrustedCommandAllowsTrustedSymlinkDirectory(t *testing.T) {
+	tmpDir := trustedTempDir(t)
+	realBin := filepath.Join(tmpDir, "real-bin")
+	if err := os.Mkdir(realBin, 0700); err != nil {
+		t.Fatalf("mkdir real bin: %v", err)
+	}
+	target := filepath.Join(realBin, "sh")
+	if err := os.WriteFile(target, []byte("#!/bin/sh\nexit 0\n"), 0700); err != nil {
+		t.Fatalf("write target: %v", err)
+	}
+	linkBin := filepath.Join(tmpDir, "bin")
+	if err := os.Symlink(realBin, linkBin); err != nil {
+		t.Fatalf("symlink bin: %v", err)
+	}
+
+	got := resolveTrustedCommand("sh", linkBin)
+	if got == "sh" || strings.Contains(got, unresolvedCommandDir) {
+		t.Fatalf("expected trusted symlink directory command to resolve, got %s", got)
+	}
+}
+
+func TestIsTrustedExecutableRejectsNonRegularFile(t *testing.T) {
+	tmpDir := trustedTempDir(t)
+	fifo := filepath.Join(tmpDir, "fifo")
+	if err := syscall.Mkfifo(fifo, 0700); err != nil {
+		t.Fatalf("mkfifo: %v", err)
+	}
+
+	if isTrustedExecutable(fifo, os.Geteuid()) {
+		t.Fatalf("expected non-regular file to be rejected: %s", fifo)
+	}
+}
+
+func trustedTempDir(t *testing.T) string {
+	t.Helper()
+
+	wd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("get cwd: %v", err)
+	}
+	tmpDir, err := os.MkdirTemp(wd, "trusted-command-")
+	if err != nil {
+		t.Fatalf("mkdir temp in cwd: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := os.RemoveAll(tmpDir); err != nil {
+			t.Fatalf("cleanup temp dir: %v", err)
+		}
+	})
+	if err := os.Chmod(tmpDir, 0700); err != nil {
+		t.Fatalf("chmod temp dir: %v", err)
+	}
+	return tmpDir
 }
 
 func TestGatherUsersGroupsAdminsWithInjectedFiles(t *testing.T) {

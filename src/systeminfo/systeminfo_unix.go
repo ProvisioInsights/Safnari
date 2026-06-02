@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"syscall"
 	"time"
 )
 
@@ -40,6 +41,8 @@ var (
 		return runCommandOutput("crontab", "-l")
 	}
 )
+
+const unresolvedCommandDir = "/__safnari_command_not_found__"
 
 const trustedCommandPath = "/usr/sbin:/usr/bin:/sbin:/bin:/usr/local/bin:/opt/homebrew/bin"
 
@@ -286,26 +289,149 @@ func appendParsedCronTasks(tasks []string, data []byte) []string {
 func safeCommand(ctx context.Context, name string, args ...string) *exec.Cmd {
 	resolvedName := resolveTrustedCommand(name, trustedCommandPath)
 	cmd := exec.CommandContext(ctx, resolvedName, args...)
-	cmd.Env = withTrustedPath(os.Environ(), trustedCommandPath)
+	cmd.Env = withTrustedPath(os.Environ(), trustedExecutablePath(trustedCommandPath))
 	return cmd
 }
 
 func resolveTrustedCommand(name, trustedPath string) string {
 	if filepath.IsAbs(name) {
-		return name
+		if isTrustedExecutable(name, os.Geteuid()) {
+			return name
+		}
+		return unresolvedCommandPath(name)
 	}
 	for _, dir := range filepath.SplitList(trustedPath) {
 		if dir == "" {
 			continue
 		}
 		candidate := filepath.Join(dir, name)
-		info, err := os.Stat(candidate)
-		if err != nil || info.IsDir() || info.Mode()&0111 == 0 {
+		if !isTrustedExecutable(candidate, os.Geteuid()) {
 			continue
 		}
 		return candidate
 	}
-	return filepath.Join("__safnari_command_not_found__", name)
+	return unresolvedCommandPath(name)
+}
+
+func unresolvedCommandPath(name string) string {
+	base := filepath.Base(name)
+	if base == "." || base == string(filepath.Separator) || base == "" {
+		base = "command"
+	}
+	return filepath.Join(unresolvedCommandDir, base)
+}
+
+func trustedExecutablePath(pathList string) string {
+	dirs := filepath.SplitList(pathList)
+	trusted := make([]string, 0, len(dirs))
+	for _, dir := range dirs {
+		if dir == "" || !isTrustedDirectory(dir, os.Geteuid()) {
+			continue
+		}
+		trusted = append(trusted, dir)
+	}
+	return strings.Join(trusted, string(os.PathListSeparator))
+}
+
+func isTrustedExecutable(path string, euid int) bool {
+	resolvedPath, err := filepath.EvalSymlinks(path)
+	if err != nil {
+		return false
+	}
+	if !isTrustedDirectoryPath(filepath.Dir(path), euid) {
+		return false
+	}
+	return isTrustedExecutableFile(resolvedPath, euid)
+}
+
+func isTrustedExecutableFile(path string, euid int) bool {
+	info, err := os.Lstat(path)
+	if err != nil || !info.Mode().IsRegular() || info.Mode()&0111 == 0 {
+		return false
+	}
+	if !isTrustedOwnerAndMode(info, euid) {
+		return false
+	}
+	return isTrustedPathChain(filepath.Dir(path), euid)
+}
+
+func isTrustedDirectory(path string, euid int) bool {
+	return isTrustedDirectoryPath(path, euid)
+}
+
+func isTrustedDirectoryPath(path string, euid int) bool {
+	info, err := os.Lstat(path)
+	if err != nil {
+		return false
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		if !isTrustedPathChain(filepath.Dir(path), euid) {
+			return false
+		}
+		resolvedPath, err := filepath.EvalSymlinks(path)
+		if err != nil {
+			return false
+		}
+		return isTrustedPathChain(resolvedPath, euid)
+	}
+	if !info.IsDir() {
+		return false
+	}
+	if !isTrustedOwnerAndMode(info, euid) {
+		return false
+	}
+	return isTrustedPathChain(path, euid)
+}
+
+func isTrustedPathChain(path string, euid int) bool {
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return false
+	}
+	abs = filepath.Clean(abs)
+	volume := filepath.VolumeName(abs)
+	rest := strings.TrimPrefix(abs, volume)
+	rest = strings.Trim(rest, string(filepath.Separator))
+	current := volume + string(filepath.Separator)
+	if volume == "" {
+		current = string(filepath.Separator)
+	}
+	if rest == "" {
+		info, err := os.Lstat(current)
+		if err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
+			return false
+		}
+		return isTrustedOwnerAndMode(info, euid)
+	}
+	for _, part := range strings.Split(rest, string(filepath.Separator)) {
+		if part == "" {
+			continue
+		}
+		current = filepath.Join(current, part)
+		info, err := os.Lstat(current)
+		if err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
+			return false
+		}
+		if !isTrustedOwnerAndMode(info, euid) {
+			return false
+		}
+	}
+	return true
+}
+
+func isTrustedOwnerAndMode(info os.FileInfo, euid int) bool {
+	if info.Mode()&0022 != 0 {
+		return false
+	}
+	stat, ok := info.Sys().(*syscall.Stat_t)
+	if !ok {
+		return false
+	}
+	uid := int(stat.Uid)
+	if euid == 0 {
+		return uid == 0
+	}
+	return uid == 0 || uid == euid
 }
 
 func withTrustedPath(env []string, trustedPath string) []string {

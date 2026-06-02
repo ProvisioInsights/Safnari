@@ -26,6 +26,32 @@ func TestOpenPrivateNoSymlinkRejectsSymlinkParent(t *testing.T) {
 	}
 }
 
+func TestOpenPrivateNoSymlinkTightensAndTruncatesExistingFile(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "out.ndjson")
+	if err := os.WriteFile(path, []byte("stale"), 0644); err != nil {
+		t.Fatalf("write existing file: %v", err)
+	}
+
+	f, err := OpenPrivateNoSymlink(path)
+	if err != nil {
+		t.Fatalf("open private file: %v", err)
+	}
+	if err := f.Close(); err != nil {
+		t.Fatalf("close private file: %v", err)
+	}
+
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("stat private file: %v", err)
+	}
+	if info.Size() != 0 {
+		t.Fatalf("expected existing file to be truncated, got size %d", info.Size())
+	}
+	if got := info.Mode().Perm(); got != 0600 {
+		t.Fatalf("expected mode 0600, got %04o", got)
+	}
+}
+
 func TestReadNoSymlinkRejectsSymlinkParent(t *testing.T) {
 	root := t.TempDir()
 	outside := t.TempDir()

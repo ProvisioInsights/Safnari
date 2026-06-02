@@ -341,7 +341,7 @@ func allSensitivePatternsCritical(patterns map[string]*regexp.Regexp) bool {
 		return false
 	}
 	for name := range patterns {
-		if !sensitive.IsCriticalPattern(name) {
+		if !isBuiltinCriticalPattern(name, patterns) {
 			return false
 		}
 	}

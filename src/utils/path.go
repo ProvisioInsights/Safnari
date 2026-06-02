@@ -32,7 +32,7 @@ func getPathGuard(roots []string) *pathGuard {
 		if err != nil {
 			continue
 		}
-		normalizedRoots = append(normalizedRoots, filepath.Clean(absRoot))
+		normalizedRoots = append(normalizedRoots, canonicalPath(absRoot))
 	}
 	guard := &pathGuard{roots: normalizedRoots}
 	actual, _ := pathGuardCache.LoadOrStore(key, guard)
@@ -47,7 +47,7 @@ func (g *pathGuard) Contains(path string) bool {
 	if err != nil {
 		return false
 	}
-	absPath = filepath.Clean(absPath)
+	absPath = canonicalPath(absPath)
 
 	for _, absRoot := range g.roots {
 		rel, err := filepath.Rel(absRoot, absPath)
@@ -59,4 +59,38 @@ func (g *pathGuard) Contains(path string) bool {
 		}
 	}
 	return false
+}
+
+func canonicalPath(path string) string {
+	cleaned := filepath.Clean(path)
+	resolved, err := filepath.EvalSymlinks(cleaned)
+	if err != nil {
+		return canonicalExistingPrefix(cleaned)
+	}
+	return filepath.Clean(resolved)
+}
+
+func canonicalExistingPrefix(path string) string {
+	volume := filepath.VolumeName(path)
+	rest := strings.TrimPrefix(path, volume)
+	rest = strings.Trim(rest, string(filepath.Separator))
+	if rest == "" {
+		return path
+	}
+	parts := strings.Split(rest, string(filepath.Separator))
+	for i := len(parts); i > 0; i-- {
+		prefix := volume + string(filepath.Separator) + filepath.Join(parts[:i]...)
+		if volume == "" {
+			prefix = string(filepath.Separator) + filepath.Join(parts[:i]...)
+		}
+		resolved, err := filepath.EvalSymlinks(prefix)
+		if err != nil {
+			continue
+		}
+		if i == len(parts) {
+			return filepath.Clean(resolved)
+		}
+		return filepath.Clean(filepath.Join(append([]string{resolved}, parts[i:]...)...))
+	}
+	return path
 }

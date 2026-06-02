@@ -368,7 +368,7 @@ func scanForSensitiveDataAdvanced(
 	}
 
 	deterministicMode := engine == "auto" || engine == "deterministic" || engine == "hybrid"
-	criticalPatternNames := filterCriticalPatternNames(patternNames, patterns)
+	criticalPatternNames := filterBuiltinCriticalPatternNames(patternNames, patterns)
 	if deterministicMode && len(criticalPatternNames) > 0 {
 		perTypeLimit := maxPerType
 		if perTypeLimit <= 0 {
@@ -402,7 +402,7 @@ func scanForSensitiveDataAdvanced(
 
 	safeGate := prefilter.BuildSensitiveGateBytes("safe", content, patternNames)
 	for _, dataType := range patternNames {
-		if sensitive.IsCriticalPattern(dataType) {
+		if isBuiltinCriticalPattern(dataType, patterns) {
 			continue
 		}
 		pattern, ok := patterns[dataType]
@@ -422,7 +422,7 @@ func scanForSensitiveDataAdvanced(
 		if perTypeLimit == 0 {
 			continue
 		}
-		if !safeGate.Allow(dataType) {
+		if !sensitive.IsCriticalPattern(dataType) && !safeGate.Allow(dataType) {
 			continue
 		}
 
@@ -444,21 +444,30 @@ func scanForSensitiveDataAdvanced(
 	return matches, matchCounts
 }
 
-func filterCriticalPatternNames(patternNames []string, patterns map[string]*regexp.Regexp) []string {
+func filterBuiltinCriticalPatternNames(patternNames []string, patterns map[string]*regexp.Regexp) []string {
 	if len(patternNames) == 0 || len(patterns) == 0 {
 		return nil
 	}
 	critical := make([]string, 0, len(patternNames))
 	for _, name := range patternNames {
-		if !sensitive.IsCriticalPattern(name) {
-			continue
-		}
-		if _, ok := patterns[name]; !ok {
+		if !isBuiltinCriticalPattern(name, patterns) {
 			continue
 		}
 		critical = append(critical, name)
 	}
 	return critical
+}
+
+func isBuiltinCriticalPattern(name string, patterns map[string]*regexp.Regexp) bool {
+	if !sensitive.IsCriticalPattern(name) {
+		return false
+	}
+	selected, ok := patterns[name]
+	if !ok {
+		return false
+	}
+	builtin, ok := sensitivePatterns[name]
+	return ok && selected == builtin
 }
 
 func regexSensitiveMatches(content []byte, pattern *regexp.Regexp, limit int, longtail string, windowBytes int) []string {
