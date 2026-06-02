@@ -42,6 +42,8 @@ var (
 	}
 )
 
+const unresolvedCommandDir = "/__safnari_command_not_found__"
+
 const trustedCommandPath = "/usr/sbin:/usr/bin:/sbin:/bin:/usr/local/bin:/opt/homebrew/bin"
 
 func gatherOSVersion(sysInfo *SystemInfo) error {
@@ -296,7 +298,7 @@ func resolveTrustedCommand(name, trustedPath string) string {
 		if isTrustedExecutable(name, os.Geteuid()) {
 			return name
 		}
-		return filepath.Join("__safnari_command_not_found__", filepath.Base(name))
+		return unresolvedCommandPath(name)
 	}
 	for _, dir := range filepath.SplitList(trustedPath) {
 		if dir == "" {
@@ -308,7 +310,15 @@ func resolveTrustedCommand(name, trustedPath string) string {
 		}
 		return candidate
 	}
-	return filepath.Join("__safnari_command_not_found__", name)
+	return unresolvedCommandPath(name)
+}
+
+func unresolvedCommandPath(name string) string {
+	base := filepath.Base(name)
+	if base == "." || base == string(filepath.Separator) || base == "" {
+		base = "command"
+	}
+	return filepath.Join(unresolvedCommandDir, base)
 }
 
 func trustedExecutablePath(pathList string) string {
@@ -325,7 +335,25 @@ func trustedExecutablePath(pathList string) string {
 
 func isTrustedExecutable(path string, euid int) bool {
 	info, err := os.Lstat(path)
-	if err != nil || info.IsDir() || info.Mode()&os.ModeSymlink != 0 || info.Mode()&0111 == 0 {
+	if err != nil || info.IsDir() {
+		return false
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		if !isTrustedPathChain(filepath.Dir(path), euid) {
+			return false
+		}
+		resolvedPath, err := filepath.EvalSymlinks(path)
+		if err != nil {
+			return false
+		}
+		return isTrustedExecutableFile(resolvedPath, euid)
+	}
+	return isTrustedExecutableFile(path, euid)
+}
+
+func isTrustedExecutableFile(path string, euid int) bool {
+	info, err := os.Lstat(path)
+	if err != nil || !info.Mode().IsRegular() || info.Mode()&0111 == 0 {
 		return false
 	}
 	if !isTrustedOwnerAndMode(info, euid) {

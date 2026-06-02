@@ -11,6 +11,7 @@ import (
 	"reflect"
 	"runtime"
 	"strings"
+	"syscall"
 	"testing"
 )
 
@@ -113,6 +114,66 @@ func TestResolveTrustedCommandSkipsRootUnsafeDirectory(t *testing.T) {
 	if isTrustedExecutable(unsafeCmd, 0) {
 		t.Fatal("expected root trust check to reject command under writable directory")
 	}
+}
+
+func TestResolveTrustedCommandUsesAbsoluteMissingSentinel(t *testing.T) {
+	got := resolveTrustedCommand("missing-command", "")
+	if !filepath.IsAbs(got) {
+		t.Fatalf("expected missing command sentinel to be absolute, got %s", got)
+	}
+	if filepath.Dir(got) != unresolvedCommandDir {
+		t.Fatalf("expected missing command under sentinel dir, got %s", got)
+	}
+}
+
+func TestIsTrustedExecutableAllowsTrustedSymlinkTarget(t *testing.T) {
+	tmpDir := trustedTempDir(t)
+	target := filepath.Join(tmpDir, "target-sh")
+	if err := os.WriteFile(target, []byte("#!/bin/sh\nexit 0\n"), 0700); err != nil {
+		t.Fatalf("write target: %v", err)
+	}
+	link := filepath.Join(tmpDir, "sh")
+	if err := os.Symlink(target, link); err != nil {
+		t.Fatalf("symlink target: %v", err)
+	}
+
+	if !isTrustedExecutable(link, os.Geteuid()) {
+		t.Fatalf("expected trusted symlink executable to be accepted: %s", link)
+	}
+}
+
+func TestIsTrustedExecutableRejectsNonRegularFile(t *testing.T) {
+	tmpDir := trustedTempDir(t)
+	fifo := filepath.Join(tmpDir, "fifo")
+	if err := syscall.Mkfifo(fifo, 0700); err != nil {
+		t.Fatalf("mkfifo: %v", err)
+	}
+
+	if isTrustedExecutable(fifo, os.Geteuid()) {
+		t.Fatalf("expected non-regular file to be rejected: %s", fifo)
+	}
+}
+
+func trustedTempDir(t *testing.T) string {
+	t.Helper()
+
+	wd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("get cwd: %v", err)
+	}
+	tmpDir, err := os.MkdirTemp(wd, "trusted-command-")
+	if err != nil {
+		t.Fatalf("mkdir temp in cwd: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := os.RemoveAll(tmpDir); err != nil {
+			t.Fatalf("cleanup temp dir: %v", err)
+		}
+	})
+	if err := os.Chmod(tmpDir, 0700); err != nil {
+		t.Fatalf("chmod temp dir: %v", err)
+	}
+	return tmpDir
 }
 
 func TestGatherUsersGroupsAdminsWithInjectedFiles(t *testing.T) {
