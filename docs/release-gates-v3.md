@@ -326,6 +326,14 @@ parser could not recover nine clean samples per workload, and this run is not va
 evidence. Both benchmark and process harnesses now disable baseline progress display so the
 next paired run measures scanning with equivalent non-interactive diagnostics.
 
+The next controlled run measured a 2.083x four-workload benchmark geometric mean and passed
+every size and memory gate, but a 30-run small-file process p95 was 1.167x the baseline,
+exceeding the 1.10x limit. The candidate small-file median was faster. Two candidate timings
+dominated this p95 among processes lasting roughly 20 ms. A separate 90-run local comparison
+of the same 128-file corpus measured a 0.908x p95 ratio and retained identical file evidence.
+The controlled workflow now takes 90 process samples per workload to test whether the tail
+finding repeats; the original failed result remains recorded.
+
 ## Validation and unresolved gates
 
 `make lint`, `make test`, macOS scanner/output/config race tests, local `govulncheck`, and all

@@ -74,7 +74,7 @@ jobs:
           python3 candidate/scripts/bench/process-release-v3.py \
             --baseline baseline/bin/safnari-darwin-arm64 \
             --candidate candidate/bin/safnari-darwin-arm64 \
-            --output-dir evidence/process --runs 30
+            --output-dir evidence/process --runs 90
         shell: bash
       - name: Evaluate accepted speed, tail, memory, and size gates
         run: |
