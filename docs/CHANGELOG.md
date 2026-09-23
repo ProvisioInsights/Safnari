@@ -20,7 +20,7 @@ See [migration-v3.md](migration-v3.md) for configuration, spool, and rollback st
   and selects exact-search counting based on the term set and observed match density.
 - Diagnostics use `log/slog` on stderr and progress uses periodic counters.
 - The standard build uses JSON-v2 and retains OTEL/HTTP.
-- Release builds use Go 1.26.8 with updated gRPC, x/net, and OTEL SDK dependencies.
+- Release builds use Go 1.26.8 with gRPC 1.83.2 and updated x/net and OTEL SDK dependencies.
 
 ### Fixed
 
@@ -36,9 +36,9 @@ See [migration-v3.md](migration-v3.md) for configuration, spool, and rollback st
 
 ### Validation status
 
-The Go 1.26.8 candidate measured a 2.418x four-workload warm-cache throughput gain against
-source `956d509702b48fa967ae0e339ce16f648cf470d2` on a paired macOS ARM64 runner at
-equivalent coverage. Its 90 paired process runs per workload passed the p95 and memory limits;
+The gRPC-patched Go 1.26.8 candidate measured a 2.473x four-workload warm-cache throughput gain
+against source `956d509702b48fa967ae0e339ce16f648cf470d2` on a paired macOS ARM64 runner
+at equivalent coverage. Its 90 paired process runs per workload passed the p95 and memory limits;
 all five size targets passed. The earlier 30-run small-file p95 failure remains recorded in
 [release-gates-v3.md](release-gates-v3.md). Crash-cutpoint, delivery-overhead, and managed-device
 pilot requirements remain before general availability.
