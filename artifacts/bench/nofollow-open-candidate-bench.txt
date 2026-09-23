@@ -1,0 +1,14 @@
+goos: darwin
+goarch: arm64
+pkg: safnari/scanner
+cpu: Apple M5 Max
+BenchmarkScanFilesCorpora/small_files/adaptive-18         	      34	  33355277 ns/op	43228936 B/op	  282589 allocs/op
+BenchmarkScanFilesCorpora/small_files/adaptive-18         	      36	  34588726 ns/op	42005616 B/op	  282505 allocs/op
+BenchmarkScanFilesCorpora/small_files/adaptive-18         	      34	  33157961 ns/op	41606419 B/op	  282554 allocs/op
+BenchmarkScanFilesCorpora/small_files/adaptive-18         	      34	  33797620 ns/op	42386298 B/op	  282545 allocs/op
+BenchmarkScanFilesCorpora/small_files/adaptive-18         	      34	  33329254 ns/op	41003323 B/op	  282521 allocs/op
+BenchmarkScanFilesCorpora/small_files/adaptive-18         	      34	  33351140 ns/op	41468286 B/op	  282497 allocs/op
+BenchmarkScanFilesCorpora/small_files/adaptive-18         	      34	  33417835 ns/op	42250220 B/op	  282541 allocs/op
+BenchmarkScanFilesCorpora/small_files/adaptive-18         	      33	  33147734 ns/op	42710082 B/op	  282528 allocs/op
+BenchmarkScanFilesCorpora/small_files/adaptive-18         	signal: interrupt
+FAIL	safnari/scanner	16.579s

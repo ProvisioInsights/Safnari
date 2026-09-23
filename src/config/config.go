@@ -83,12 +83,9 @@ type Config struct {
 	SensitiveLongtail       string            `json:"sensitive_longtail"`
 	SensitiveMatchMode      string            `json:"sensitive_match_mode"`
 	SensitiveWindowBytes    int               `json:"sensitive_window_bytes"`
-	ContentReadMode         string            `json:"content_read_mode"`
 	StreamChunkSize         int               `json:"stream_chunk_size"`
 	StreamOverlapBytes      int               `json:"stream_overlap_bytes"`
-	MmapMinSize             int64             `json:"mmap_min_size"`
 	JSONLayout              string            `json:"json_layout"`
-	SimdFastpath            bool              `json:"simd_fastpath"`
 	DiagSlowScanThreshold   time.Duration     `json:"diag_slow_scan_threshold"`
 	DiagDir                 string            `json:"diag_dir"`
 	DiagGoroutineLeak       bool              `json:"diag_goroutine_leak"`
@@ -100,6 +97,9 @@ type Config struct {
 	OtelExportPaths         bool              `json:"otel_export_paths"`
 	OtelExportSensitive     bool              `json:"otel_export_sensitive"`
 	OtelExportCmdline       bool              `json:"otel_export_cmdline"`
+	SpoolDir                string            `json:"spool_dir"`
+	DeviceID                string            `json:"device_id"`
+	ReplayOnly              bool              `json:"replay_only"`
 	TraceFlight             bool              `json:"trace_flight"`
 	TraceFlightFile         string            `json:"trace_flight_file"`
 	TraceFlightMaxBytes     uint64            `json:"trace_flight_max_bytes"`
@@ -122,7 +122,7 @@ func LoadConfig() (*Config, error) {
 		OutputFileName:          fmt.Sprintf("safnari-%s-%d.ndjson", timestamp, now.Unix()),
 		ConcurrencyLevel:        runtime.NumCPU(),
 		NiceLevel:               "medium",
-		HashAlgorithms:          []string{"md5", "sha1", "sha256"},
+		HashAlgorithms:          []string{"sha256"},
 		SearchTerms:             []string{},
 		MaxFileSize:             10485760,
 		ContentScanMaxBytes:     10 * 1024 * 1024,
@@ -136,7 +136,7 @@ func LoadConfig() (*Config, error) {
 		FuzzyMinSize:            256,
 		FuzzyMaxSize:            20 * 1024 * 1024,
 		DeltaScan:               false,
-		DeltaCacheMode:          "chunk",
+		DeltaCacheMode:          "mtime",
 		DeltaCacheDir:           defaultDeltaCacheDir(),
 		DeltaCacheMaxBytes:      1 << 30,
 		LastScanFile:            ".safnari_last_scan",
@@ -164,12 +164,9 @@ func LoadConfig() (*Config, error) {
 		SensitiveLongtail:       "sampled",
 		SensitiveMatchMode:      "all",
 		SensitiveWindowBytes:    4096,
-		ContentReadMode:         "auto",
 		StreamChunkSize:         256 * 1024,
 		StreamOverlapBytes:      512,
-		MmapMinSize:             128 * 1024,
 		JSONLayout:              "ndjson",
-		SimdFastpath:            false,
 		DiagSlowScanThreshold:   0,
 		DiagDir:                 ".",
 		DiagGoroutineLeak:       false,
@@ -302,16 +299,9 @@ func LoadConfig() (*Config, error) {
 		cfg.SensitiveWindowBytes,
 		"Window size in bytes for long-tail hybrid scans (default: 4096).",
 	)
-	contentReadMode := flag.String("content-read-mode", cfg.ContentReadMode, "Content read mode: auto, stream, or mmap (default: auto).")
 	streamChunkSize := flag.Int("stream-chunk-size", cfg.StreamChunkSize, "Streaming chunk size in bytes (default: 262144).")
 	streamOverlapBytes := flag.Int("stream-overlap-bytes", cfg.StreamOverlapBytes, "Streaming overlap in bytes between chunks (default: 512).")
-	mmapMinSize := flag.Int64(
-		"mmap-min-size",
-		cfg.MmapMinSize,
-		"Minimum file size in bytes for mmap content read path when enabled (default: 131072).",
-	)
 	jsonLayout := flag.String("json-layout", cfg.JSONLayout, "JSON output layout. Only ndjson is supported (default: ndjson).")
-	simdFastpath := flag.Bool("simd-fastpath", cfg.SimdFastpath, "Enable SIMD text fast path experiment when available (default: false).")
 	diagSlowScanThreshold := flag.Duration(
 		"diag-slow-scan-threshold",
 		cfg.DiagSlowScanThreshold,
@@ -331,6 +321,9 @@ func LoadConfig() (*Config, error) {
 	otelExportPaths := flag.Bool("otel-export-paths", cfg.OtelExportPaths, "Include raw file/executable paths in OTEL payloads (default: false).")
 	otelExportSensitive := flag.Bool("otel-export-sensitive", cfg.OtelExportSensitive, "Include sensitive_data and detailed system inventories in OTEL payloads (default: false).")
 	otelExportCmdline := flag.Bool("otel-export-cmdline", cfg.OtelExportCmdline, "Include process command lines in OTEL payloads (default: false).")
+	spoolDir := flag.String("spool-dir", cfg.SpoolDir, "Private durable OTEL spool directory (default: user cache).")
+	deviceID := flag.String("device-id", cfg.DeviceID, "Externally provisioned device identifier (default: local installation ID).")
+	replayOnly := flag.Bool("replay-only", false, "Replay pending durable OTEL batches without scanning.")
 	traceFlight := flag.Bool("trace-flight", cfg.TraceFlight, fmt.Sprintf("Enable flight recorder tracing (default: %t).", cfg.TraceFlight))
 	traceFlightFile := flag.String("trace-flight-file", cfg.TraceFlightFile, fmt.Sprintf("Flight recorder output file (default: %s).", cfg.TraceFlightFile))
 	traceFlightMaxBytes := flag.Uint64("trace-flight-max-bytes", cfg.TraceFlightMaxBytes, "Max bytes for flight recorder buffer (default: 0 for runtime default).")
@@ -472,18 +465,12 @@ func LoadConfig() (*Config, error) {
 			cfg.SensitiveMatchMode = strings.ToLower(strings.TrimSpace(*sensitiveMatchMode))
 		case "sensitive-window-bytes":
 			cfg.SensitiveWindowBytes = *sensitiveWindowBytes
-		case "content-read-mode":
-			cfg.ContentReadMode = strings.ToLower(strings.TrimSpace(*contentReadMode))
 		case "stream-chunk-size":
 			cfg.StreamChunkSize = *streamChunkSize
 		case "stream-overlap-bytes":
 			cfg.StreamOverlapBytes = *streamOverlapBytes
-		case "mmap-min-size":
-			cfg.MmapMinSize = *mmapMinSize
 		case "json-layout":
 			cfg.JSONLayout = strings.ToLower(strings.TrimSpace(*jsonLayout))
-		case "simd-fastpath":
-			cfg.SimdFastpath = *simdFastpath
 		case "diag-slow-scan-threshold":
 			cfg.DiagSlowScanThreshold = *diagSlowScanThreshold
 		case "diag-dir":
@@ -506,6 +493,9 @@ func LoadConfig() (*Config, error) {
 			cfg.OtelExportSensitive = *otelExportSensitive
 		case "otel-export-cmdline":
 			cfg.OtelExportCmdline = *otelExportCmdline
+			cfg.SpoolDir = strings.TrimSpace(*spoolDir)
+			cfg.DeviceID = strings.TrimSpace(*deviceID)
+			cfg.ReplayOnly = *replayOnly
 		case "trace-flight":
 			cfg.TraceFlight = *traceFlight
 		case "trace-flight-file":
@@ -522,7 +512,6 @@ func LoadConfig() (*Config, error) {
 	cfg.SensitiveEngine = strings.ToLower(strings.TrimSpace(cfg.SensitiveEngine))
 	cfg.SensitiveLongtail = strings.ToLower(strings.TrimSpace(cfg.SensitiveLongtail))
 	cfg.SensitiveMatchMode = strings.ToLower(strings.TrimSpace(cfg.SensitiveMatchMode))
-	cfg.ContentReadMode = strings.ToLower(strings.TrimSpace(cfg.ContentReadMode))
 	cfg.JSONLayout = strings.ToLower(strings.TrimSpace(cfg.JSONLayout))
 	if cfg.RedactSensitive == "none" {
 		cfg.RedactSensitive = ""
@@ -539,11 +528,8 @@ func LoadConfig() (*Config, error) {
 	if cfg.SensitiveMatchMode == "" {
 		cfg.SensitiveMatchMode = "all"
 	}
-	if cfg.ContentReadMode == "" {
-		cfg.ContentReadMode = "auto"
-	}
 	if cfg.DeltaCacheMode == "" {
-		cfg.DeltaCacheMode = "chunk"
+		cfg.DeltaCacheMode = "mtime"
 	}
 	if cfg.DeltaCacheDir == "" {
 		cfg.DeltaCacheDir = defaultDeltaCacheDir()
@@ -556,9 +542,6 @@ func LoadConfig() (*Config, error) {
 	}
 	if cfg.StreamOverlapBytes < 0 {
 		cfg.StreamOverlapBytes = 512
-	}
-	if cfg.MmapMinSize <= 0 {
-		cfg.MmapMinSize = 128 * 1024
 	}
 	if cfg.JSONLayout == "" {
 		cfg.JSONLayout = "ndjson"
@@ -643,14 +626,11 @@ func (cfg *Config) validate() error {
 	if strings.TrimSpace(cfg.SensitiveMatchMode) == "" {
 		cfg.SensitiveMatchMode = "all"
 	}
-	if strings.TrimSpace(cfg.ContentReadMode) == "" {
-		cfg.ContentReadMode = "auto"
-	}
 	if strings.TrimSpace(cfg.JSONLayout) == "" {
 		cfg.JSONLayout = "ndjson"
 	}
 	if strings.TrimSpace(cfg.DeltaCacheMode) == "" {
-		cfg.DeltaCacheMode = "chunk"
+		cfg.DeltaCacheMode = "mtime"
 	}
 	if strings.TrimSpace(cfg.DeltaCacheDir) == "" {
 		cfg.DeltaCacheDir = defaultDeltaCacheDir()
@@ -712,9 +692,6 @@ func (cfg *Config) validate() error {
 	if cfg.SensitiveMatchMode != "all" && cfg.SensitiveMatchMode != "first" {
 		return fmt.Errorf("invalid sensitive-match-mode value: %s", cfg.SensitiveMatchMode)
 	}
-	if cfg.ContentReadMode != "stream" && cfg.ContentReadMode != "mmap" && cfg.ContentReadMode != "auto" {
-		return fmt.Errorf("invalid content-read-mode value: %s", cfg.ContentReadMode)
-	}
 	if cfg.DeltaCacheMode != "chunk" && cfg.DeltaCacheMode != "mtime" {
 		return fmt.Errorf("invalid delta-cache-mode value: %s", cfg.DeltaCacheMode)
 	}
@@ -723,9 +700,6 @@ func (cfg *Config) validate() error {
 	}
 	if cfg.JSONLayout != "ndjson" {
 		return fmt.Errorf("invalid json-layout value: %s", cfg.JSONLayout)
-	}
-	if cfg.MmapMinSize < 0 {
-		return fmt.Errorf("mmap-min-size must be zero or positive")
 	}
 	if cfg.StreamChunkSize <= 0 {
 		return fmt.Errorf("stream-chunk-size must be positive")

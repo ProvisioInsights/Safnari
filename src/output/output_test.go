@@ -22,6 +22,9 @@ import (
 type ndjsonTestRecord struct {
 	RecordType    string          `json:"record_type"`
 	SchemaVersion string          `json:"schema_version"`
+	DeviceID      string          `json:"device_id"`
+	ScanID        string          `json:"scan_id"`
+	EventID       string          `json:"event_id"`
 	Payload       json.RawMessage `json:"payload"`
 }
 
@@ -109,8 +112,8 @@ func TestOutputLifecycle(t *testing.T) {
 	if records[0].SchemaVersion != SchemaVersion {
 		t.Fatalf("unexpected schema version: %s", records[0].SchemaVersion)
 	}
-	if records[len(records)-1].RecordType != "metrics" {
-		t.Fatalf("expected metrics record last, got %q", records[len(records)-1].RecordType)
+	if records[len(records)-1].RecordType != "scan_complete" || records[len(records)-2].RecordType != "metrics" {
+		t.Fatalf("expected metrics then scan_complete, got %q and %q", records[len(records)-2].RecordType, records[len(records)-1].RecordType)
 	}
 }
 
@@ -214,8 +217,8 @@ func TestOutputRotation(t *testing.T) {
 	if got := countRecordType(records, "file"); got != 5 {
 		t.Fatalf("expected 5 rotated file records, got %d", got)
 	}
-	if records[len(records)-1].RecordType != "metrics" {
-		t.Fatalf("expected metrics record last after rotation, got %q", records[len(records)-1].RecordType)
+	if records[len(records)-1].RecordType != "scan_complete" || records[len(records)-2].RecordType != "metrics" {
+		t.Fatalf("expected metrics then scan_complete after rotation, got %q and %q", records[len(records)-2].RecordType, records[len(records)-1].RecordType)
 	}
 }
 
@@ -287,8 +290,8 @@ func TestCloseDrainsAcceptedWrites(t *testing.T) {
 	if got := countRecordType(records, "file"); got != int(accepted.Load()) {
 		t.Fatalf("expected %d drained file records, got %d", accepted.Load(), got)
 	}
-	if records[len(records)-1].RecordType != "metrics" {
-		t.Fatalf("expected metrics record last after drain, got %q", records[len(records)-1].RecordType)
+	if records[len(records)-1].RecordType != "scan_complete" || records[len(records)-2].RecordType != "metrics" {
+		t.Fatalf("expected metrics then scan_complete after drain, got %q and %q", records[len(records)-2].RecordType, records[len(records)-1].RecordType)
 	}
 }
 
@@ -321,10 +324,37 @@ func TestIncrementScanned(t *testing.T) {
 	}
 }
 
+func TestScanCompletionIncludesAggregateCoverage(t *testing.T) {
+	dir := t.TempDir()
+	cfg := &config.Config{OutputFileName: filepath.Join(dir, "coverage.ndjson"), SpoolDir: filepath.Join(dir, "state")}
+	w, err := New(cfg, nil, &Metrics{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	w.RecordCoverage(128, true, true, true)
+	w.RecordFileError()
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+	records := readNDJSONRecords(t, cfg.OutputFileName)
+	var summary map[string]interface{}
+	if err := json.Unmarshal(records[len(records)-1].Payload, &summary); err != nil {
+		t.Fatal(err)
+	}
+	for key, want := range map[string]float64{
+		"content_scanned_bytes": 128, "content_truncated_files": 1,
+		"sensitive_truncated_files": 1, "files_with_warnings": 1, "error_count": 1,
+	} {
+		if got := summary[key]; got != want {
+			t.Fatalf("%s = %v, want %v", key, got, want)
+		}
+	}
+}
+
 func TestShouldSync(t *testing.T) {
 	w := &Writer{recordsSinceSync: 1, lastSyncAt: time.Now()}
-	if !w.shouldSync() {
-		t.Fatal("expected sync on first record")
+	if w.shouldSync() {
+		t.Fatal("unexpected sync before record threshold")
 	}
 
 	w.recordsSinceSync = flushEveryRecords

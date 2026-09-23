@@ -14,7 +14,6 @@ import (
 	"safnari/fuzzy"
 	"safnari/logger"
 	"safnari/metadata"
-	"safnari/scanner/prefilter"
 )
 
 const defaultContentScanMaxBytes int64 = 10 * 1024 * 1024
@@ -31,6 +30,11 @@ type FileContext struct {
 	Cfg               *config.Config
 	SensitivePatterns map[string]*regexp.Regexp
 	deltaCache        *DeltaChunkCache
+	rootCache         *directoryRootCache
+	rootRelativePath  string
+	rootTimes         FileTimes
+	rootTimesErr      error
+	rootTimesLoaded   bool
 
 	source *ChunkSource
 
@@ -44,6 +48,7 @@ type FileContext struct {
 	analysisLoaded bool
 	analysisErr    error
 	analysis       *contentAnalysisResults
+	searchMatcher  *streamAhoMatcher
 
 	contentScanBytes     int64
 	contentScanTruncated bool
@@ -230,7 +235,28 @@ func (fc *FileContext) Source() (*ChunkSource, error) {
 	if fc.source != nil {
 		return fc.source, nil
 	}
-	source, err := openChunkSource(fc.Path, fc.Info, fc.Cfg)
+	var source *ChunkSource
+	var err error
+	if fc.rootCache != nil {
+		var file *os.File
+		file, err = fc.rootCache.Open(fc.rootRelativePath)
+		if err == nil {
+			var openedInfo os.FileInfo
+			openedInfo, err = file.Stat()
+			if err == nil && !os.SameFile(fc.Info, openedInfo) {
+				err = fmt.Errorf("file changed during traversal")
+			}
+			if err == nil {
+				fc.rootTimes, fc.rootTimesErr = fileTimesFromOpenFile(fc.Info, file)
+				fc.rootTimesLoaded = true
+				source, err = newChunkSource(fc.Path, fc.Info, fc.Cfg, file)
+			} else {
+				_ = file.Close()
+			}
+		}
+	} else {
+		source, err = openChunkSource(fc.Path, fc.Info, fc.Cfg)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -240,6 +266,11 @@ func (fc *FileContext) Source() (*ChunkSource, error) {
 
 func (fc *FileContext) Close() error {
 	if fc == nil || fc.source == nil {
+		return nil
+	}
+	if fc.rootCache != nil {
+		fc.rootCache.CloseFile(fc.source.takeFile())
+		fc.source = nil
 		return nil
 	}
 	err := fc.source.Close()
@@ -267,7 +298,10 @@ func (fc *FileContext) EnsureContentAnalysis() (*contentAnalysisResults, error) 
 
 func buildFileModules(cfg *config.Config, patterns map[string]*regexp.Regexp) []FileModule {
 	fuzzyHashers := buildFuzzyHashers(cfg)
-	searchCounter := prefilter.BuildSearchCounter(cfg.SearchTerms)
+	var searchMatcher *streamAhoMatcher
+	if len(cfg.SearchTerms) > 0 {
+		searchMatcher = newStreamAhoMatcher(cfg.SearchTerms)
+	}
 	patternNames := make([]string, 0, len(patterns))
 	for name := range patterns {
 		patternNames = append(patternNames, name)
@@ -279,11 +313,11 @@ func buildFileModules(cfg *config.Config, patterns map[string]*regexp.Regexp) []
 		aclModule{},
 		adsModule{},
 		mimeModule{},
+		searchModule{matcher: searchMatcher},
 		hashModule{},
 		metadataModule{},
 		fuzzyModule{hashers: fuzzyHashers},
 		sensitiveModule{patternNames: patternNames},
-		searchModule{counter: searchCounter},
 	}
 }
 
@@ -298,7 +332,18 @@ func (m baseModule) Collect(ctx context.Context, fc *FileContext, data *FileReco
 	data.Size = fc.Info.Size()
 	data.ModTime = fc.Info.ModTime().Format(time.RFC3339)
 
-	times, err := getFileTimes(fc.Path)
+	var times FileTimes
+	var err error
+	if fc.rootCache != nil {
+		if !fc.rootTimesLoaded {
+			_, err = fc.Source()
+		}
+		if err == nil {
+			times, err = fc.rootTimes, fc.rootTimesErr
+		}
+	} else {
+		times, err = getFileTimes(fc.Path)
+	}
 	if err == nil {
 		data.CreationTime = times.CreationTime
 		data.AccessTime = times.AccessTime
@@ -405,6 +450,10 @@ func (m metadataModule) Name() string { return "metadata" }
 func (m metadataModule) Enabled(cfg *config.Config) bool { return cfg.ScanFiles }
 
 func (m metadataModule) Collect(ctx context.Context, fc *FileContext, data *FileRecord) error {
+	if fc.MimeType() == "application/pdf" {
+		fc.addWarning("pdf_metadata_unsupported")
+		return nil
+	}
 	if !fc.FullFileProcessingAllowed() {
 		fc.NoteFullFileProcessingSkipped()
 		return nil
@@ -492,15 +541,14 @@ func (m sensitiveModule) Collect(ctx context.Context, fc *FileContext, data *Fil
 	return nil
 }
 
-type searchModule struct {
-	counter prefilter.SearchCounter
-}
+type searchModule struct{ matcher *streamAhoMatcher }
 
 func (m searchModule) Name() string { return "search" }
 
 func (m searchModule) Enabled(cfg *config.Config) bool { return len(cfg.SearchTerms) > 0 }
 
 func (m searchModule) Collect(ctx context.Context, fc *FileContext, data *FileRecord) error {
+	fc.searchMatcher = m.matcher
 	if !fc.ShouldSearchContent() {
 		return nil
 	}

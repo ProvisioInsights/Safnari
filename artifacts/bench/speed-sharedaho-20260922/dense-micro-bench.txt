@@ -1,0 +1,15 @@
+goos: darwin
+goarch: arm64
+pkg: safnari/scanner
+cpu: Apple M5 Max
+BenchmarkStreamAho-18    	    2760	    436673 ns/op	 637.84 MB/s	   32149 B/op	      62 allocs/op
+BenchmarkStreamAho-18    	    2628	    434755 ns/op	 640.65 MB/s	   32154 B/op	      62 allocs/op
+BenchmarkStreamAho-18    	    2737	    437520 ns/op	 636.61 MB/s	   32149 B/op	      62 allocs/op
+BenchmarkStreamAho-18    	    2685	    442192 ns/op	 629.88 MB/s	   32151 B/op	      62 allocs/op
+BenchmarkStreamAho-18    	    2754	    438170 ns/op	 635.66 MB/s	   32151 B/op	      62 allocs/op
+BenchmarkStreamAho-18    	    2772	    437368 ns/op	 636.83 MB/s	   32148 B/op	      62 allocs/op
+BenchmarkStreamAho-18    	    2695	    441697 ns/op	 630.59 MB/s	   32151 B/op	      62 allocs/op
+BenchmarkStreamAho-18    	    2734	    441035 ns/op	 631.53 MB/s	   32149 B/op	      62 allocs/op
+BenchmarkStreamAho-18    	    2755	    439510 ns/op	 633.72 MB/s	   32149 B/op	      62 allocs/op
+PASS
+ok  	safnari/scanner	12.310s

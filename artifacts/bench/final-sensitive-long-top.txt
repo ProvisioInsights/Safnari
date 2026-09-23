@@ -1,0 +1,128 @@
+File: scanner.test
+Type: cpu
+Time: 2026-09-22 23:03:47 CDT
+Duration: 3.81s, Total samples = 13.34s (349.74%)
+Showing nodes accounting for 11.63s, 87.18% of 13.34s total
+Dropped 233 nodes (cum <= 0.07s)
+Showing top 120 nodes out of 196
+      flat  flat%   sum%        cum   cum%
+         0     0%     0%      7.56s 56.67%  safnari/scanner.ScanFiles.func8
+         0     0%     0%      7.56s 56.67%  safnari/scanner.processFileWithRootCache
+         0     0%     0%      7.54s 56.52%  safnari/scanner.collectFileDataWithRootCache
+         0     0%     0%      7.11s 53.30%  syscall.syscalln
+     7.10s 53.22% 53.22%      7.10s 53.22%  syscall.rawsyscalln
+         0     0% 53.22%      4.73s 35.46%  syscall.syscall
+         0     0% 53.22%      3.78s 28.34%  os.(*File).Close (inline)
+         0     0% 53.22%      3.78s 28.34%  os.(*file).close
+         0     0% 53.22%      3.75s 28.11%  internal/poll.(*FD).Close
+         0     0% 53.22%      3.75s 28.11%  internal/poll.(*FD).decref
+         0     0% 53.22%      3.75s 28.11%  internal/poll.(*FD).destroy
+         0     0% 53.22%      3.75s 28.11%  internal/poll.(*SysFile).destroy (inline)
+         0     0% 53.22%      3.75s 28.11%  safnari/scanner.(*ChunkSource).Close
+         0     0% 53.22%      3.75s 28.11%  safnari/scanner.(*FileContext).Close
+         0     0% 53.22%      3.75s 28.11%  safnari/scanner.collectFileDataWithRootCache.func1
+         0     0% 53.22%      3.75s 28.11%  syscall.Close
+         0     0% 53.22%      2.38s 17.84%  runtime.systemstack
+         0     0% 53.22%      2.25s 16.87%  syscall.syscall6
+         0     0% 53.22%      2.17s 16.27%  os.ignoringEINTR (inline)
+         0     0% 53.22%      1.98s 14.84%  safnari/scanner.(*FileContext).Source
+         0     0% 53.22%      1.78s 13.34%  safnari/scanner.searchModule.Collect
+         0     0% 53.22%      1.77s 13.27%  safnari/scanner.(*FileContext).EnsureContentAnalysis
+         0     0% 53.22%      1.77s 13.27%  safnari/scanner.runContentPipeline
+         0     0% 53.22%      1.76s 13.19%  safnari/scanner.(*ChunkSource).Scan
+         0     0% 53.22%      1.76s 13.19%  safnari/scanner.(*ScanPipeline).Run
+         0     0% 53.22%      1.67s 12.52%  safnari/scanner.(*directoryRootCache).Open
+         0     0% 53.22%      1.55s 11.62%  internal/syscall/unix.Openat (inline)
+         0     0% 53.22%      1.55s 11.62%  os.doInRoot[go.shape.int]
+         0     0% 53.22%      1.55s 11.62%  syscall.openat
+         0     0% 53.22%      1.53s 11.47%  os.(*Root).Open (inline)
+         0     0% 53.22%      1.53s 11.47%  os.(*Root).OpenFile
+         0     0% 53.22%      1.53s 11.47%  os.rootOpenFileNolog
+         0     0% 53.22%      1.53s 11.47%  runtime.schedule
+     1.51s 11.32% 64.54%      1.51s 11.32%  runtime.usleep
+         0     0% 64.54%      1.45s 10.87%  runtime.lock (partial-inline)
+     0.01s 0.075% 64.62%      1.45s 10.87%  runtime.lock2
+         0     0% 64.62%      1.45s 10.87%  runtime.lockWithRank (inline)
+     0.01s 0.075% 64.69%      1.43s 10.72%  runtime.findRunnable
+         0     0% 64.69%      1.42s 10.64%  os.rootOpenFileNolog.func1
+         0     0% 64.69%      1.42s 10.64%  os.rootOpenFileNolog.func1.1 (inline)
+     0.01s 0.075% 64.77%      1.28s  9.60%  runtime.mcall
+         0     0% 64.77%      1.27s  9.52%  safnari/scanner.(*ScanPipeline).Run.func1
+         0     0% 64.77%      1.11s  8.32%  runtime.park_m
+         0     0% 64.77%      1.09s  8.17%  runtime.osyield (inline)
+         0     0% 64.77%      0.95s  7.12%  safnari/scanner.(*streamSensitiveConsumer).Consume
+         0     0% 64.77%      0.94s  7.05%  safnari/scanner.(*streamSensitiveConsumer).consumeDeterministic
+     0.17s  1.27% 66.04%      0.93s  6.97%  safnari/scanner/sensitive.ScanDeterministicVisit
+         0     0% 66.04%      0.92s  6.90%  runtime.semasleep
+     0.90s  6.75% 72.79%      0.90s  6.75%  runtime.pthread_cond_wait
+         0     0% 72.79%      0.86s  6.45%  runtime.gopreempt_m (inline)
+         0     0% 72.79%      0.86s  6.45%  runtime.goschedImpl
+     0.01s 0.075% 72.86%      0.81s  6.07%  runtime.newstack
+         0     0% 72.86%      0.80s  6.00%  runtime.morestack
+     0.79s  5.92% 78.79%      0.79s  5.92%  runtime.madvise
+     0.01s 0.075% 78.86%      0.75s  5.62%  runtime.(*mheap).allocSpan
+         0     0% 78.86%      0.74s  5.55%  runtime.(*mheap).alloc.func1
+         0     0% 78.86%      0.73s  5.47%  runtime.sysUsed (inline)
+         0     0% 78.86%      0.73s  5.47%  runtime.sysUsedOS (inline)
+     0.03s  0.22% 79.09%      0.65s  4.87%  safnari/scanner/sensitive.ScanDeterministicVisit.func2 (inline)
+         0     0% 79.09%      0.62s  4.65%  safnari/scanner.(*streamSensitiveConsumer).consumeDeterministic.func1
+         0     0% 79.09%      0.61s  4.57%  internal/poll.(*FD).Pread
+         0     0% 79.09%      0.61s  4.57%  internal/poll.(*FD).Pread.func1 (inline)
+         0     0% 79.09%      0.61s  4.57%  internal/poll.ignoringEINTR2[go.shape.int] (inline)
+         0     0% 79.09%      0.61s  4.57%  os.(*File).ReadAt
+         0     0% 79.09%      0.61s  4.57%  os.(*File).pread (inline)
+         0     0% 79.09%      0.61s  4.57%  syscall.Pread (inline)
+         0     0% 79.09%      0.61s  4.57%  syscall.pread
+         0     0% 79.09%      0.60s  4.50%  runtime.stopm
+         0     0% 79.09%      0.59s  4.42%  safnari/scanner.ScanFiles.func6
+         0     0% 79.09%      0.59s  4.42%  safnari/scanner.fastWalker.Walk
+         0     0% 79.09%      0.56s  4.20%  runtime.gcBgMarkWorker.func2
+         0     0% 79.09%      0.56s  4.20%  runtime.gcDrain
+         0     0% 79.09%      0.56s  4.20%  runtime.mPark (inline)
+         0     0% 79.09%      0.56s  4.20%  runtime.notesleep
+         0     0% 79.09%      0.56s  4.20%  safnari/output.(*Writer).startAsyncWriter.func1
+         0     0% 79.09%      0.55s  4.12%  runtime.gcDrainMarkWorkerDedicated (inline)
+         0     0% 79.09%      0.48s  3.60%  io.(*SectionReader).Read
+         0     0% 79.09%      0.48s  3.60%  runtime.gcstopm
+         0     0% 79.09%      0.48s  3.60%  runtime.preemptM
+     0.48s  3.60% 82.68%      0.48s  3.60%  runtime.pthread_kill
+         0     0% 82.68%      0.48s  3.60%  runtime.signalM (inline)
+         0     0% 82.68%      0.44s  3.30%  runtime.preemptone
+         0     0% 82.68%      0.42s  3.15%  runtime.runSafePointFn
+         0     0% 82.68%      0.42s  3.15%  runtime.runqgrab
+         0     0% 82.68%      0.42s  3.15%  runtime.runqsteal
+         0     0% 82.68%      0.42s  3.15%  runtime.stealWork
+         0     0% 82.68%      0.41s  3.07%  safnari/output.(*Writer).writeRecord
+         0     0% 82.68%      0.37s  2.77%  encoding/json/v2.Marshal
+         0     0% 82.68%      0.37s  2.77%  safnari/output.jsonMarshal (inline)
+     0.01s 0.075% 82.76%      0.34s  2.55%  encoding/json/v2.makeDefaultArshaler.makeStructArshaler.func6
+         0     0% 82.76%      0.34s  2.55%  encoding/json/v2.marshalEncode
+         0     0% 82.76%      0.33s  2.47%  encoding/json/v2.makeDefaultArshaler.makePointerArshaler.func9
+         0     0% 82.76%      0.33s  2.47%  encoding/json/v2.makeInterfaceArshaler.func1
+         0     0% 82.76%      0.33s  2.47%  encoding/json/v2.marshalValueAny
+     0.30s  2.25% 85.01%      0.30s  2.25%  runtime.pthread_cond_signal
+         0     0% 85.01%      0.30s  2.25%  runtime.semawakeup
+         0     0% 85.01%      0.29s  2.17%  encoding/json/v2.makeMapArshaler.func2
+         0     0% 85.01%      0.28s  2.10%  os.Lstat
+         0     0% 85.01%      0.28s  2.10%  os.lstatNolog
+         0     0% 85.01%      0.28s  2.10%  os.lstatNolog.func1 (inline)
+         0     0% 85.01%      0.28s  2.10%  runtime.(*gcControllerState).enlistWorker
+         0     0% 85.01%      0.28s  2.10%  syscall.Lstat
+     0.02s  0.15% 85.16%      0.27s  2.02%  encoding/json/v2.makeSliceArshaler.func2
+         0     0% 85.16%      0.27s  2.02%  syscall.Fstat
+         0     0% 85.16%      0.26s  1.95%  encoding/json/v2.makeDefaultArshaler.makeStringArshaler.func3
+         0     0% 85.16%      0.26s  1.95%  runtime.gcBgMarkWorker
+         0     0% 85.16%      0.26s  1.95%  testing.(*B).runN
+         0     0% 85.16%      0.25s  1.87%  os.(*unixDirent).Info
+         0     0% 85.16%      0.25s  1.87%  safnari/scanner.(*streamAhoCounter).Consume
+     0.18s  1.35% 86.51%      0.25s  1.87%  safnari/scanner.(*streamAhoMatcher).Consume
+         0     0% 86.51%      0.25s  1.87%  safnari/scanner.(*streamSearchConsumer).Consume
+         0     0% 86.51%      0.25s  1.87%  safnari/scanner.ScanFiles.func6.1
+         0     0% 86.51%      0.24s  1.80%  testing.(*B).launch
+         0     0% 86.51%      0.23s  1.72%  internal/poll.ignoringEINTR (inline)
+         0     0% 86.51%      0.20s  1.50%  safnari/scanner.BenchmarkScanFilesCorpora.func1.1
+         0     0% 86.51%      0.20s  1.50%  safnari/scanner.benchmarkScanFilesOnRoot
+         0     0% 86.51%      0.19s  1.42%  runtime.forEachPInternal
+     0.09s  0.67% 87.18%      0.18s  1.35%  internal/runtime/maps.(*Map).getWithoutKeySmallFastStr
+         0     0% 87.18%      0.18s  1.35%  os.OpenFile
+         0     0% 87.18%      0.18s  1.35%  os.open (inline)

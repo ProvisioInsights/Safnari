@@ -1,0 +1,8 @@
+{
+  "platform": "macOS-27.0-arm64-arm-64bit-Mach-O",
+  "corpus_sha256": "0a5aa19ea48459a9339f000f5af10bc3bce91eb5d460e95a715e549dd91d2eb2",
+  "baseline_binary_sha256": "3bdc14e1622894f5ff3942cdf1bc4ea5286f90076a40485968fb975f111686e1",
+  "candidate_binary_sha256": "72230f7a89b78f130ea9bdc5aff622d1e7a6f536f0cd2511f9c3be5bf3a94012",
+  "runs_per_workload": 30,
+  "cache_state": "timed runs after one priming invocation per binary; cold cache not controlled"
+}

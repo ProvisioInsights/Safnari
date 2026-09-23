@@ -356,12 +356,9 @@ func TestOptimizationFlags(t *testing.T) {
 		"--sensitive-engine", "hybrid",
 		"--sensitive-longtail", "full",
 		"--sensitive-window-bytes", "8192",
-		"--content-read-mode", "mmap",
 		"--stream-chunk-size", "131072",
 		"--stream-overlap-bytes", "256",
-		"--mmap-min-size", "262144",
 		"--json-layout", "ndjson",
-		"--simd-fastpath",
 		"--auto-tune-runtime-metrics=false",
 		"--auto-tune-target-runq", "1.5",
 		"--auto-tune-target-latency-ms", "40",
@@ -385,23 +382,14 @@ func TestOptimizationFlags(t *testing.T) {
 	if cfg.SensitiveWindowBytes != 8192 {
 		t.Fatalf("unexpected sensitive window bytes: %d", cfg.SensitiveWindowBytes)
 	}
-	if cfg.ContentReadMode != "mmap" {
-		t.Fatalf("unexpected content read mode: %s", cfg.ContentReadMode)
-	}
 	if cfg.StreamChunkSize != 131072 {
 		t.Fatalf("unexpected stream chunk size: %d", cfg.StreamChunkSize)
 	}
 	if cfg.StreamOverlapBytes != 256 {
 		t.Fatalf("unexpected stream overlap bytes: %d", cfg.StreamOverlapBytes)
 	}
-	if cfg.MmapMinSize != 262144 {
-		t.Fatalf("unexpected mmap min size: %d", cfg.MmapMinSize)
-	}
 	if cfg.JSONLayout != "ndjson" {
 		t.Fatalf("unexpected json layout: %s", cfg.JSONLayout)
-	}
-	if !cfg.SimdFastpath {
-		t.Fatal("expected simd-fastpath enabled")
 	}
 	if cfg.AutoTuneRuntimeMetrics {
 		t.Fatal("expected auto-tune-runtime-metrics disabled")
@@ -438,14 +426,12 @@ func TestOptimizationFlagValidation(t *testing.T) {
 		SensitiveEngine:         "auto",
 		SensitiveLongtail:       "sampled",
 		SensitiveWindowBytes:    4096,
-		ContentReadMode:         "auto",
 		StreamChunkSize:         256 * 1024,
 		StreamOverlapBytes:      512,
 		JSONLayout:              "ndjson",
 		ContentScanMaxBytes:     1024,
 		AutoTune:                false,
 		DiagDir:                 ".",
-		MmapMinSize:             1024,
 		AutoTuneTargetRunQ:      1,
 		AutoTuneTargetLatencyMs: 25,
 	}
@@ -467,12 +453,6 @@ func TestOptimizationFlagValidation(t *testing.T) {
 	}
 
 	cfg.SensitiveLongtail = "sampled"
-	cfg.ContentReadMode = "broken"
-	if err := cfg.validate(); err == nil {
-		t.Fatal("expected invalid content-read-mode error")
-	}
-
-	cfg.ContentReadMode = "stream"
 	cfg.StreamOverlapBytes = cfg.StreamChunkSize
 	if err := cfg.validate(); err == nil {
 		t.Fatal("expected invalid stream-overlap-bytes error")
@@ -511,11 +491,9 @@ func TestValidateRejectsResourceExhaustionKnobs(t *testing.T) {
 			SensitiveLongtail:       "sampled",
 			SensitiveMatchMode:      "all",
 			SensitiveWindowBytes:    4096,
-			ContentReadMode:         "auto",
 			ContentScanMaxBytes:     1024,
 			StreamChunkSize:         256 * 1024,
 			StreamOverlapBytes:      512,
-			MmapMinSize:             128 * 1024,
 			JSONLayout:              "ndjson",
 			DeltaCacheMode:          "chunk",
 			DeltaCacheDir:           ".cache",

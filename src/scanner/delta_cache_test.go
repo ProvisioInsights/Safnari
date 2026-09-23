@@ -207,6 +207,11 @@ func TestInternalArtifactFilterSkipsDeltaCacheDir(t *testing.T) {
 	if !filter.ShouldSkip(candidate) {
 		t.Fatalf("expected delta cache artifact to be skipped: %s", candidate)
 	}
+	cfg.SpoolDir = filepath.Join(root, "spool")
+	filter = newInternalArtifactFilter(cfg)
+	if !filter.ShouldSkip(filepath.Join(cfg.SpoolDir, "batch.ready")) {
+		t.Fatal("expected export spool artifact to be skipped")
+	}
 }
 
 func TestPickScheduledTaskPrefersAgedLargeWork(t *testing.T) {

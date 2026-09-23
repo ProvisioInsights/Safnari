@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/signal"
@@ -20,7 +21,9 @@ import (
 	"safnari/version"
 )
 
-func main() {
+func main() { os.Exit(run()) }
+
+func run() int {
 	if err := tracing.Start(); err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to start trace: %v\n", err)
 	} else {
@@ -31,14 +34,25 @@ func main() {
 	cfg, err := config.LoadConfig()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error loading configuration: %v\n", err)
-		os.Exit(1)
+		return 1
 	}
 
 	// Initialize logger
 	logger.Init(cfg.LogLevel)
+	if cfg.ReplayOnly {
+		if err := output.ReplayPending(cfg); err != nil {
+			logger.Errorf("OTEL replay failed: %v", err)
+			return deliveryExitCode(err)
+		}
+		return 0
+	}
 
 	if cfg.ScanSensitive && cfg.RedactSensitive == "" {
 		logger.Warn("Sensitive data matches will be stored unredacted. Consider --redact-sensitive mask or hash.")
+	}
+	if err := scanner.PrepareConfig(cfg); err != nil {
+		logger.Errorf("Failed to prepare scan: %v", err)
+		return 1
 	}
 
 	if cfg.TraceFlight {
@@ -84,13 +98,9 @@ func main() {
 	// Prepare output
 	writer, err := output.New(cfg, sysInfo, &metrics)
 	if err != nil {
-		logger.Fatalf("Failed to initialize output: %v", err)
+		logger.Errorf("Failed to initialize output: %v", err)
+		return 1
 	}
-	defer func() {
-		if err := writer.Close(); err != nil {
-			logger.Errorf("Failed to finalize output: %v", err)
-		}
-	}()
 
 	// Handle graceful shutdown
 	ctx, cancel := context.WithCancel(context.Background())
@@ -116,7 +126,7 @@ func main() {
 	if cfg.ScanFiles || cfg.ScanSensitive {
 		err = scanner.ScanFiles(ctx, cfg, &metrics, writer)
 		if err != nil {
-			logger.Fatalf("Scanning failed: %v", err)
+			logger.Errorf("Scanning failed: %v", err)
 		}
 	}
 
@@ -125,8 +135,41 @@ func main() {
 
 	// Update output with final metrics
 	writer.SetMetrics(metrics)
-
+	if err != nil || ctx.Err() != nil {
+		writer.SetCompletion("incomplete")
+		if ctx.Err() != nil {
+			writer.SetCompletionCode("interrupted")
+		} else {
+			writer.SetCompletionCode("scan_failed")
+		}
+	} else {
+		writer.SetCompletion("complete")
+	}
+	closeErr := writer.Close()
+	if closeErr != nil {
+		logger.Errorf("Failed to finalize output: %v", closeErr)
+	}
+	if err != nil || ctx.Err() != nil {
+		return 1
+	}
+	if closeErr != nil {
+		return deliveryExitCode(closeErr)
+	}
 	logger.Info("Scanning completed successfully.")
+	return 0
+}
+
+func deliveryExitCode(err error) int {
+	if err == nil {
+		return 0
+	}
+	if errors.Is(err, output.ErrRejectedDelivery) {
+		return 3
+	}
+	if errors.Is(err, output.ErrPendingDelivery) {
+		return 2
+	}
+	return 1
 }
 
 func handleSignals(cancelFunc context.CancelFunc, metrics *output.Metrics, w *output.Writer, traceFlight bool, traceFlightFile string) {
@@ -149,6 +192,7 @@ func handleSignalEvent(
 	// Record end time upon interruption
 	metrics.EndTime = time.Now().Format(time.RFC3339)
 	w.SetMetrics(*metrics)
+	w.SetCompletion("incomplete")
 
 	if traceFlight {
 		if err := tracing.WriteFlightRecorder(traceFlightFile); err != nil {

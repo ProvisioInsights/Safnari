@@ -1,0 +1,9 @@
+binary,workload,seconds,rss_bytes
+baseline,small_files,0.023750249994918704,24068096
+candidate,small_files,0.22097666701301932,23461888
+baseline,mixed_heavy_tail,0.030822415952570736,23101440
+candidate,mixed_heavy_tail,0.030494416947476566,23642112
+baseline,sensitive_dense,0.01711687503848225,22593536
+candidate,sensitive_dense,0.016884833108633757,22724608
+baseline,duplicate_logs,0.01655179203953594,23461888
+candidate,duplicate_logs,0.015374792041257024,23166976

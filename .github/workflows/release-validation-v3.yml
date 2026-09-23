@@ -1,0 +1,94 @@
+name: Schema v3 release validation
+
+permissions:
+  contents: read
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, labeled]
+  workflow_dispatch:
+
+jobs:
+  paired-release-gate:
+    if: github.event_name == 'workflow_dispatch' || contains(github.event.pull_request.labels.*.name, 'release-validation-v3')
+    runs-on: macos-15
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          path: candidate
+      - uses: actions/checkout@v4
+        with:
+          ref: 956d509702b48fa967ae0e339ce16f648cf470d2
+          path: baseline
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: candidate/src/go.mod
+          cache-dependency-path: candidate/src/go.sum
+      - name: Record build context
+        run: |
+          mkdir -p evidence
+          {
+            go version
+            uname -a
+            git -C baseline rev-parse HEAD
+            git -C candidate rev-parse HEAD
+          } > evidence/build-context.txt
+        shell: bash
+      - name: Build comparable stripped binaries
+        run: |
+          set -euo pipefail
+          mkdir -p baseline/bin
+          (
+            cd baseline/src
+            for target in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64; do
+              os=${target%/*}
+              arch=${target#*/}
+              ext=''
+              if [ "$os" = windows ]; then ext='.exe'; fi
+              GOOS=$os GOARCH=$arch GOEXPERIMENT=jsonv2 go build -trimpath -tags jsonv2 \
+                -ldflags='-s -w' -o "../bin/safnari-$os-$arch$ext" ./cmd
+            done
+          )
+          make -C candidate build-release-all VERSION=safnari-20260923a
+          shasum -a 256 baseline/bin/* candidate/bin/safnari-* > evidence/binary-sha256.txt
+        shell: bash
+      - name: Run nine paired benchmark samples per workload
+        run: |
+          set -euo pipefail
+          pattern='^BenchmarkScanFilesCorpora/(small_files|mixed_heavy_tail|sensitive_dense|duplicate_logs)/adaptive$'
+          (
+            cd baseline/src
+            SAFNARI_DISABLE_PROGRESS=1 GOEXPERIMENT=jsonv2 go test -tags jsonv2 -run '^$' -bench "$pattern" \
+              -benchmem -count=9 -timeout=90m ./scanner
+          ) > evidence/baseline-bench.txt 2>&1
+          (
+            cd candidate/src
+            SAFNARI_DISABLE_PROGRESS=1 GOEXPERIMENT=jsonv2 go test -tags jsonv2 -run '^$' -bench "$pattern" \
+              -benchmem -count=9 -timeout=90m ./scanner
+          ) > evidence/candidate-bench.txt 2>&1
+        shell: bash
+      - name: Run ninety paired process samples and compare retained evidence
+        run: |
+          python3 candidate/scripts/bench/process-release-v3.py \
+            --baseline baseline/bin/safnari-darwin-arm64 \
+            --candidate candidate/bin/safnari-darwin-arm64 \
+            --output-dir evidence/process --runs 90
+        shell: bash
+      - name: Evaluate accepted speed, tail, memory, and size gates
+        run: |
+          set -euo pipefail
+          python3 candidate/scripts/bench/release-gate-v3.py \
+            --baseline-bench evidence/baseline-bench.txt \
+            --candidate-bench evidence/candidate-bench.txt \
+            --baseline-bin-dir baseline/bin --candidate-bin-dir candidate/bin \
+            --baseline-process evidence/process/baseline.csv \
+            --candidate-process evidence/process/candidate.csv \
+            | tee evidence/gate-output.txt
+        shell: bash
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: schema-v3-release-evidence
+          path: evidence/

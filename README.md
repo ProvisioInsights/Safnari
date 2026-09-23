@@ -13,8 +13,8 @@ latest benchmark run published by the GitHub Performance workflow.
 - Gather host information such as OS details, installed patches, and hostname
 - List running processes and their details (PID, name, memory usage, etc.)
 - Scan files across specified paths or all drives
-- Calculate file hashes (MD5, SHA1, SHA256)
-- Extract metadata from images (EXIF), PDFs, and DOCX documents
+- Calculate file hashes (SHA-256 by default; MD5, SHA-1, and BLAKE3 on request)
+- Extract lightweight metadata from images (EXIF) and DOCX documents
 - Detect sensitive data patterns such as emails, credit cards (with Luhn validation), AWS keys, JWT
   tokens, street addresses, IBANs, UK National Insurance numbers, EU VAT IDs, India Aadhaar numbers,
   China resident IDs, and user-defined regexes via the `--custom-patterns` JSON flag. Users can scan
@@ -24,7 +24,7 @@ latest benchmark run published by the GitHub Performance workflow.
 - Redact sensitive matches in output with `--redact-sensitive` (mask or hash).
 - Toggle system information gathering, file metadata scanning, sensitive data detection, and
   process enumeration independently via CLI flags
-- Output results as NDJSON schema v2 records (`record_type`, `schema_version`, `payload`)
+- Output schema v3 NDJSON records with stable scan and event identity
 
 ## Installation
 
@@ -37,15 +37,17 @@ make build
 ```
 
 The compiled binary will be located in the `bin` directory.
+Use `make build-release` for a stripped release executable and a matching unstripped
+diagnostic build under `bin/debug/`.
+Use `make build-release-all VERSION=<tag>` to build all five release targets with an embedded
+version. Build outputs stay in `bin/`.
 
 Safnari enables the experimental JSON v2 encoder by default for better throughput.
 
-Safnari embeds its version at build time. To set the version string, pass a
-`-ldflags` option:
+Release builds embed the supplied tag. For example:
 
 ```sh
-cd src
-go build -ldflags "-X safnari/version.Version=v1.0.2" -o ../bin/safnari ./cmd
+make build-release VERSION=safnari-20260923a
 ```
 
 To cross-compile for other platforms, set `GOOS` and `GOARCH`:
@@ -119,7 +121,7 @@ Running Safnari without any flags applies these defaults:
 - `--concurrency`: number of logical CPUs (effective value adjusted by `--nice` unless
   `--concurrency` is set)
 - `--nice`: `medium`
-- `--hashes`: `md5,sha1,sha256`
+- `--hashes`: `sha256`
 - `--search`: none
 - `--include`: none
 - `--exclude`: none
@@ -163,12 +165,9 @@ Running Safnari without any flags applies these defaults:
 - `--sensitive-engine`: `auto`
 - `--sensitive-longtail`: `sampled`
 - `--sensitive-window-bytes`: `4096`
-- `--content-read-mode`: `auto`
 - `--stream-chunk-size`: `262144`
 - `--stream-overlap-bytes`: `512`
-- `--mmap-min-size`: `131072`
 - `--json-layout`: `ndjson`
-- `--simd-fastpath`: `false`
 - `--diag-slow-scan-threshold`: `0`
 - `--diag-dir`: `.`
 - `--diag-goroutine-leak`: `false`
@@ -176,6 +175,9 @@ Running Safnari without any flags applies these defaults:
 - `--otel-headers`: none
 - `--otel-service-name`: `safnari`
 - `--otel-timeout`: `5s`
+- `--spool-dir`: user cache `safnari/spool`
+- `--device-id`: generated installation ID unless externally provisioned
+- `--replay-only`: `false`
 - `--trace-flight`: `false`
 - `--trace-flight-file`: `trace-flight.out`
 - `--trace-flight-max-bytes`: `0`
@@ -190,7 +192,6 @@ make bench-gate BASELINE=artifacts/bench/<before-dir> CANDIDATE=artifacts/bench/
 make bench-compare BASELINE=artifacts/bench/<before-dir> CANDIDATE=artifacts/bench/<after-dir>
 make profile-generate
 make build-pgo-ultra
-make bench-simd
 ```
 
 `make bench-ultra` now captures synthetic, small-files, mixed, mixed-heavy-tail,
@@ -200,9 +201,9 @@ two artifact directories to generate a `benchstat` before/after report. When
 both `BASELINE` and `CANDIDATE` are supplied, `make bench-gate` switches into
 artifact-compare mode and enforces the before/after thresholds.
 
-In GitHub Actions, pull requests run the lighter `benchmark-pr` workflow and
-upload benchmark artifacts plus a gate summary for review. Pushes to `main` and
-tags keep the stricter non-PR benchmark enforcement path.
+In GitHub Actions, pull requests and pushes upload benchmark artifacts. The historical
+ultra gate is informational for schema v3. The separate numeric gate and outstanding
+release checks are described in [release-gates-v3.md](docs/release-gates-v3.md).
 
 ```sh
 ./bin/safnari-$(go env GOOS)-$(go env GOARCH) --path /home/user --hashes sha256 --search "password"
@@ -217,13 +218,12 @@ Search results are included as a `search_hits` map where each term maps to the n
 found in that file. When content inspection is capped by `--content-scan-max-bytes`, file records
 also include `content_scan_bytes`, `content_scan_truncated`, and `collection_warnings`.
 
-Delta scans default to `--delta-cache-mode chunk`, but Safnari automatically falls back to the
-plain streaming path for small changed files that still require full-file evidence hashes. That
-avoids paying chunk-cache bookkeeping when it is unlikely to win back time.
+Delta scans default to `--delta-cache-mode mtime`. Chunk caching remains available explicitly.
 
-Safnari writes NDJSON only. Each line is a record envelope with `record_type`, `schema_version`,
-and `payload`. The schema version is fixed at `2`, with record types `system_info`, `process`,
-`file`, and `metrics`.
+Safnari writes schema v3 NDJSON. Each record has `device_id`, `scan_id`, `sequence`, `event_id`,
+`observed_at`, `scanner_version`, and `policy_digest` as well as the record type and payload.
+`scan_start` and `scan_complete` bracket the existing system, process, file, and metrics records.
+See the [v3 migration guide](docs/migration-v3.md) before replacing a v2 deployment.
 
 Metrics include start/end timestamps, total files discovered, files scanned, files written to the
 output, and total running processes.
@@ -233,10 +233,11 @@ release checks unless `--check-updates` is enabled.
 
 ### OTEL Export
 
-When `--otel-endpoint` is set (or OTEL environment variables are present),
-Safnari exports records over OTLP/HTTP Logs. The exported log body contains the
-same fields as the local JSON records, and each log includes `record_type` and
-`schema_version` attributes for reconstruction.
+When `--otel-endpoint` is set (or OTEL environment variables are enabled), Safnari queues
+sanitized records durably and exports them over OTLP/HTTP Logs. Use `--replay-only` to drain a
+pending spool without scanning. Receiver acceptance acknowledges a batch; consumers must
+deduplicate by `event_id`. Export defaults exclude paths, filenames, raw matches, search terms,
+command lines, and detailed metadata. HTTPS is required except for loopback development.
 
 ## Security Posture (Brief)
 
@@ -249,9 +250,9 @@ paths. For managed fleet or OTEL deployments, prefer authenticated and
 encrypted export channels with data-minimization defaults (hashes/locators over
 raw values).
 
-CI now layers `govulncheck`, CodeQL, Gitleaks, and Trivy on pull requests and
-pushes. Release automation also generates SPDX SBOMs for both the source tree
-and compiled binaries and publishes them with release artifacts.
+CI layers `govulncheck`, CodeQL, Gitleaks, and Trivy on pull requests and pushes.
+It builds all five targets and uploads stripped binaries, diagnostic builds, and SPDX SBOMs
+as workflow artifacts. See the [changelog](docs/CHANGELOG.md) for release changes.
 
 ## Capability Matrix
 
@@ -262,7 +263,7 @@ The table below summarizes what Safnari collects by default across platforms. Op
 | Baseline file inventory | Yes | Yes | Yes | `--scan-files` | User |
 | Cryptographic hashes (MD5/SHA1/SHA256) | Yes | Yes | Yes | `--hashes` | User |
 | Fuzzy hashing (TLSH) | Yes | Yes | Yes | `--fuzzy-hash`, `--fuzzy-algorithms`, size limits | User |
-| File metadata (EXIF/PDF) | Yes | Yes | Yes | `--scan-files` | User |
+| File metadata (EXIF/DOCX) | Yes | Yes | Yes | `--scan-files` | User |
 | File times (create/access/change) | Yes | Yes | Yes | `--scan-files` | User |
 | File ID (inode/volume+file index) | Yes | Yes | Yes | `--scan-files` | User |
 | Extended attributes (xattrs) | Yes | Yes | No | `--collect-xattrs`, `--xattr-max-value-size` | User |

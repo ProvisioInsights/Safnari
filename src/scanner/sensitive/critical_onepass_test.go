@@ -70,3 +70,11 @@ func TestScanDeterministicVisitStopsOnVisitorDecision(t *testing.T) {
 		t.Fatalf("expected visitor to stop after first match, got %d visits", visited)
 	}
 }
+
+func TestScanDeterministicAPIKeyPrefixGate(t *testing.T) {
+	content := []byte("ordinary words API_KEY=one API-SECRET:two ACCESS-TOKEN=three api_key=four")
+	matches, counts := ScanDeterministicAll(content, []string{"api_key"}, 100, 100)
+	if counts["api_key"] != 4 || len(matches["api_key"]) != 4 {
+		t.Fatalf("API key variants lost: counts=%v matches=%v", counts, matches)
+	}
+}

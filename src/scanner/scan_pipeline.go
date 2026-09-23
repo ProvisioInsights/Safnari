@@ -119,10 +119,16 @@ type streamSearchConsumer struct {
 	results  map[string]int
 }
 
-func newStreamSearchConsumer(terms []string, limit int64) *streamSearchConsumer {
+func newStreamSearchConsumer(terms []string, template *streamAhoMatcher, limit int64) *streamSearchConsumer {
+	var counter *streamAhoCounter
+	if template != nil {
+		counter = newStreamAhoCounterFromTemplate(template)
+	} else {
+		counter = newStreamAhoCounter(terms)
+	}
 	return &streamSearchConsumer{
 		limit:   limit,
-		counter: newStreamAhoCounter(terms),
+		counter: counter,
 	}
 }
 
@@ -390,7 +396,7 @@ func runContentPipeline(fc *FileContext) (*contentAnalysisResults, error) {
 
 	var searchConsumer *streamSearchConsumer
 	if len(fc.Cfg.SearchTerms) > 0 && source.ShouldSearchContent() {
-		searchConsumer = newStreamSearchConsumer(fc.Cfg.SearchTerms, contentLimit)
+		searchConsumer = newStreamSearchConsumer(fc.Cfg.SearchTerms, fc.searchMatcher, contentLimit)
 		consumers = append(consumers, searchConsumer)
 		fc.markContentScan(contentLimit)
 	}

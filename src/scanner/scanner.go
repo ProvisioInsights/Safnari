@@ -3,8 +3,10 @@ package scanner
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io/fs"
 	"os"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"sync"
@@ -14,20 +16,22 @@ import (
 	"safnari/config"
 	"safnari/logger"
 	"safnari/output"
-	"safnari/scanner/prefilter"
 	"safnari/utils"
 
-	"github.com/schollz/progressbar/v3"
 	"golang.org/x/time/rate"
 )
 
 type fileScanTask struct {
-	path string
-	info os.FileInfo
+	path         string
+	info         os.FileInfo
+	rootCache    *directoryRootCache
+	relativePath string
 }
 
 func ScanFiles(ctx context.Context, cfg *config.Config, metrics *output.Metrics, w *output.Writer) error {
-	applyPerformanceProfile(cfg)
+	if err := PrepareConfig(cfg); err != nil {
+		return err
+	}
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
@@ -49,31 +53,14 @@ func ScanFiles(ctx context.Context, cfg *config.Config, metrics *output.Metrics,
 		}
 	}
 	// If cfg.AllDrives is true, get all local drives
-	if cfg.AllDrives {
-		drives, err := utils.GetLocalDrives()
-		if err != nil {
-			return err
-		}
-		cfg.StartPaths = drives
-	}
 
 	totalFiles := 0
-	var bar *progressbar.ProgressBar
 
 	matcher := utils.NewPatternMatcher(cfg.IncludePatterns, cfg.ExcludePatterns)
 	artifactFilter := newInternalArtifactFilter(cfg)
-	setSIMDFastpathEnabled(cfg.SimdFastpath)
-	prefilter.SetSIMDFastpath(cfg.SimdFastpath)
 
 	if cfg.SkipCount {
 		logger.Info("Skipping total file count")
-		bar = progressbar.NewOptions(-1,
-			progressbar.OptionSetDescription("Scanning files"),
-			progressbar.OptionShowCount(),
-			progressbar.OptionSpinnerType(14),
-			progressbar.OptionSetVisibility(progressVisible()),
-			progressbar.OptionFullWidth(),
-		)
 	} else {
 		// Display message about initial file count
 		logger.Info("Counting total number of files...")
@@ -90,25 +77,9 @@ func ScanFiles(ctx context.Context, cfg *config.Config, metrics *output.Metrics,
 		// Update metrics with total file count
 		metrics.TotalFiles = totalFiles
 
-		bar = progressbar.NewOptions(totalFiles,
-			progressbar.OptionSetDescription("Scanning files"),
-			progressbar.OptionShowCount(),
-			progressbar.OptionSetPredictTime(true),
-			progressbar.OptionSetVisibility(progressVisible()),
-			progressbar.OptionFullWidth(),
-		)
 	}
 
 	var wg sync.WaitGroup
-	progressCh := make(chan int, maxInt(cfg.ConcurrencyLevel*4, 64))
-	var progressWG sync.WaitGroup
-	progressWG.Add(1)
-	go func() {
-		defer progressWG.Done()
-		for delta := range progressCh {
-			_ = bar.Add(delta)
-		}
-	}()
 
 	// Prepare sensitive data patterns
 	sensitivePatterns := GetPatterns(cfg.IncludeDataTypes, cfg.CustomPatterns, cfg.ExcludeDataTypes)
@@ -139,6 +110,22 @@ func ScanFiles(ctx context.Context, cfg *config.Config, metrics *output.Metrics,
 	filesChan := make(chan fileScanTask, cfg.ConcurrencyLevel)
 	scheduler := newSizeLaneScheduler(maxInt(cfg.ConcurrencyLevel*8, 64))
 	var processedCounter atomic.Int64
+	progressDone := make(chan struct{})
+	if progressVisible() {
+		go func() {
+			ticker := time.NewTicker(5 * time.Second)
+			defer ticker.Stop()
+			for {
+				select {
+				case <-ticker.C:
+					logger.Infof("Files processed: %d", processedCounter.Load())
+				case <-progressDone:
+					return
+				}
+			}
+		}()
+	}
+	defer close(progressDone)
 	if cfg.AutoTune {
 		startAutoTuneLoop(
 			ctx,
@@ -160,12 +147,52 @@ func ScanFiles(ctx context.Context, cfg *config.Config, metrics *output.Metrics,
 	}
 
 	selectedWalker := selectWalker(cfg)
+	useRootedOpens := runtime.GOOS != "windows" && !cfg.CollectXattrs && !cfg.CollectACL && !cfg.ScanADS
+	rootCaches := make(map[string]*directoryRootCache, len(cfg.StartPaths))
+	if useRootedOpens {
+		for _, startPath := range cfg.StartPaths {
+			if rootCaches[startPath] != nil {
+				continue
+			}
+			info, err := os.Lstat(startPath)
+			if err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
+				continue
+			}
+			root, err := os.OpenRoot(startPath)
+			if err != nil {
+				continue
+			}
+			openedInfo, err := root.Stat(".")
+			if err != nil || !os.SameFile(info, openedInfo) {
+				_ = root.Close()
+				continue
+			}
+			rootCaches[startPath] = newDirectoryRootCache(root)
+		}
+	}
+	defer func() {
+		for _, cache := range rootCaches {
+			cache.Close()
+		}
+	}()
+	var firstErr error
+	var firstErrOnce sync.Once
+	setScanError := func(err error) {
+		if err == nil || errors.Is(err, context.Canceled) {
+			return
+		}
+		firstErrOnce.Do(func() {
+			firstErr = err
+			cancel()
+		})
+	}
 	go scheduler.Run(ctx, filesChan)
 
 	// Start the file walking in a separate goroutine
 	go func() {
 		defer scheduler.Close()
 		for _, startPath := range cfg.StartPaths {
+			rootCache := rootCaches[startPath]
 			err := selectedWalker.Walk(ctx, startPath, func(path string, d fs.DirEntry, err error) error {
 				if err != nil {
 					logger.Warnf("Failed to access %s: %v", path, err)
@@ -176,6 +203,9 @@ func ScanFiles(ctx context.Context, cfg *config.Config, metrics *output.Metrics,
 				}
 
 				if d.IsDir() {
+					if artifactFilter.ShouldSkip(path) {
+						return fs.SkipDir
+					}
 					return nil
 				}
 				if artifactFilter.ShouldSkip(path) {
@@ -185,11 +215,24 @@ func ScanFiles(ctx context.Context, cfg *config.Config, metrics *output.Metrics,
 				if matcher.ShouldInclude(path) {
 					info, err := d.Info()
 					if err == nil {
+						// Windows loads the file ID lazily. Pin it while walking so
+						// a later open can detect a pathname replaced in the queue.
+						if runtime.GOOS == "windows" && !os.SameFile(info, info) {
+							return fmt.Errorf("cannot pin file identity: %s", path)
+						}
 						if cfg.DeltaScan && info.ModTime().Before(lastScanTime) {
 							return nil
 						}
 					}
-					if err := scheduler.Enqueue(ctx, fileScanTask{path: path, info: info}, cfg); err != nil {
+					task := fileScanTask{path: path, info: info}
+					if rootCache != nil && info != nil {
+						rel, relErr := filepath.Rel(startPath, path)
+						if relErr == nil {
+							task.rootCache = rootCache
+							task.relativePath = rel
+						}
+					}
+					if err := scheduler.Enqueue(ctx, task, cfg); err != nil {
 						return err
 					}
 					// Wait for permission from the limiter
@@ -203,23 +246,12 @@ func ScanFiles(ctx context.Context, cfg *config.Config, metrics *output.Metrics,
 			})
 			if err != nil && !errors.Is(err, context.Canceled) {
 				logger.Warnf("Error walking path %s: %v", startPath, err)
+				setScanError(err)
 			}
 		}
 	}()
 
 	// Start worker pool
-	var firstErr error
-	var firstErrOnce sync.Once
-	setScanError := func(err error) {
-		if err == nil || errors.Is(err, context.Canceled) {
-			return
-		}
-		firstErrOnce.Do(func() {
-			firstErr = err
-			cancel()
-		})
-	}
-
 	for range cfg.ConcurrencyLevel {
 		wg.Add(1)
 		go func() {
@@ -231,19 +263,16 @@ func ScanFiles(ctx context.Context, cfg *config.Config, metrics *output.Metrics,
 				default:
 					// Continue processing
 				}
-				if err := processFile(ctx, task.path, task.info, cfg, w, sensitivePatterns, fileModules, deltaCache, true); err != nil {
+				if err := processFileWithRootCache(ctx, task.path, task.info, cfg, w, sensitivePatterns, fileModules, deltaCache, task.rootCache == nil, task.rootCache, task.relativePath); err != nil {
 					setScanError(err)
 					return
 				}
 				processedCounter.Add(1)
-				progressCh <- 1
 			}
 		}()
 	}
 
 	wg.Wait()
-	close(progressCh)
-	progressWG.Wait()
 	if err := w.WaitIdle(); err != nil {
 		return err
 	}
@@ -252,13 +281,28 @@ func ScanFiles(ctx context.Context, cfg *config.Config, metrics *output.Metrics,
 	if cfg.SkipCount {
 		metrics.TotalFiles = metrics.FilesScanned
 	}
+	if firstErr != nil {
+		return firstErr
+	}
 	if cfg.DeltaScan && cfg.LastScanFile != "" {
 		if err := writePrivateFileNoSymlink(cfg.LastScanFile, []byte(time.Now().UTC().Format(time.RFC3339))); err != nil {
 			logger.Warnf("Failed to write last scan time: %v", err)
 		}
 	}
-	if firstErr != nil {
-		return firstErr
+	return nil
+}
+
+// PrepareConfig resolves the effective scan coverage before the output writer
+// calculates the policy digest. It is safe to call twice for direct API users.
+func PrepareConfig(cfg *config.Config) error {
+	applyPerformanceProfile(cfg)
+	if cfg.AllDrives {
+		drives, err := utils.GetLocalDrives()
+		if err != nil {
+			return err
+		}
+		cfg.StartPaths = drives
+		cfg.AllDrives = false
 	}
 	return nil
 }
@@ -277,6 +321,9 @@ func countTotalFiles(ctx context.Context, startPath string, cfg *config.Config, 
 		}
 		if d == nil {
 			return nil
+		}
+		if d.IsDir() && artifactFilter.ShouldSkip(path) {
+			return fs.SkipDir
 		}
 		if !d.IsDir() && artifactFilter.ShouldSkip(path) {
 			return nil

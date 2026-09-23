@@ -44,7 +44,20 @@ func openChunkSource(path string, info os.FileInfo, cfg *config.Config) (*ChunkS
 	if err != nil {
 		return nil, err
 	}
+	if info != nil {
+		openedInfo, statErr := file.Stat()
+		if statErr != nil || !os.SameFile(info, openedInfo) {
+			_ = file.Close()
+			if statErr != nil {
+				return nil, statErr
+			}
+			return nil, fmt.Errorf("file changed during traversal")
+		}
+	}
+	return newChunkSource(path, info, cfg, file)
+}
 
+func newChunkSource(path string, info os.FileInfo, cfg *config.Config, file *os.File) (*ChunkSource, error) {
 	s := &ChunkSource{
 		path: path,
 		info: info,
@@ -96,6 +109,15 @@ func (s *ChunkSource) Close() error {
 	err := s.file.Close()
 	s.file = nil
 	return err
+}
+
+func (s *ChunkSource) takeFile() *os.File {
+	if s == nil {
+		return nil
+	}
+	file := s.file
+	s.file = nil
+	return file
 }
 
 func (s *ChunkSource) File() *os.File {
@@ -212,10 +234,32 @@ func (s *ChunkSource) Scan(limit int64, fn func(chunk []byte, offset int64) erro
 		buf = buf[:chunkSize]
 	}
 
-	reader := s.SectionReader(limit)
+	size := int64(0)
+	if s.info != nil {
+		size = s.info.Size()
+	}
+	if limit > 0 && (size == 0 || size > limit) {
+		size = limit
+	}
+	if size < 0 {
+		size = 0
+	}
+	headerBytes := min(int64(len(s.header)), size)
+	reader := io.NewSectionReader(s.file, headerBytes, size-headerBytes)
 	var offset int64
 	for {
-		n, err := reader.Read(buf)
+		n := 0
+		if offset < headerBytes {
+			n = copy(buf, s.header[offset:headerBytes])
+		}
+		var err error
+		if n < len(buf) && offset+int64(n) < size {
+			var read int
+			read, err = reader.Read(buf[n:])
+			n += read
+		} else if offset+int64(n) >= size {
+			err = io.EOF
+		}
 		if n > 0 {
 			if consumeErr := fn(buf[:n], offset); consumeErr != nil {
 				return consumeErr

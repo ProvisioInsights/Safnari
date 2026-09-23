@@ -1,6 +1,8 @@
 package scanner
 
 import (
+	"os"
+	"runtime"
 	"time"
 
 	"github.com/djherbis/times"
@@ -17,6 +19,21 @@ func fileTimes(path string) (FileTimes, error) {
 	if err != nil {
 		return FileTimes{}, err
 	}
+	return formatFileTimes(ts), nil
+}
+
+func fileTimesFromOpenFile(info os.FileInfo, file *os.File) (FileTimes, error) {
+	if runtime.GOOS == "linux" {
+		ts, err := times.StatFile(file)
+		if err != nil {
+			return FileTimes{}, err
+		}
+		return formatFileTimes(ts), nil
+	}
+	return formatFileTimes(times.Get(info)), nil
+}
+
+func formatFileTimes(ts times.Timespec) FileTimes {
 	result := FileTimes{
 		AccessTime:   ts.AccessTime().Format(time.RFC3339),
 		ChangeTime:   "",
@@ -28,5 +45,5 @@ func fileTimes(path string) (FileTimes, error) {
 	if ts.HasBirthTime() {
 		result.CreationTime = ts.BirthTime().Format(time.RFC3339)
 	}
-	return result, nil
+	return result
 }

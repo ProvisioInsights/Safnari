@@ -3,6 +3,7 @@ GOARCH ?= $(shell go env GOARCH)
 EXT := $(if $(filter windows,$(GOOS)),.exe,)
 BIN_DIR := bin
 BIN := $(BIN_DIR)/safnari-$(GOOS)-$(GOARCH)$(EXT)
+VERSION ?= dev
 PGO_PROFILE ?= src/pgo/default.pgo
 PLATFORMS := linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64
 JSONV2 ?= 1
@@ -14,15 +15,26 @@ TAGS = jsonv2
 GOEXPERIMENT = jsonv2
 endif
 
-.PHONY: build build-all build-pgo build-pgo-ultra profile-generate bench-baseline bench-ultra bench-gate bench-compare bench-simd fmt test lint clean
+.PHONY: build build-release build-release-all build-all build-pgo build-pgo-ultra profile-generate bench-baseline bench-ultra bench-gate bench-compare release-gate-v3 fmt test lint clean
 
 build:
 	@mkdir -p $(BIN_DIR)
 	cd src && GOOS=$(GOOS) GOARCH=$(GOARCH) GOEXPERIMENT=$(GOEXPERIMENT) go build -tags "$(TAGS)" -o ../$(BIN) ./cmd
 
+build-release:
+	@mkdir -p $(BIN_DIR)/debug
+	cd src && GOOS=$(GOOS) GOARCH=$(GOARCH) GOEXPERIMENT=$(GOEXPERIMENT) go build -trimpath -tags "$(TAGS)" -ldflags="-X safnari/version.Version=$(VERSION)" -o ../$(BIN_DIR)/debug/safnari-$(GOOS)-$(GOARCH)$(EXT) ./cmd
+	cd src && GOOS=$(GOOS) GOARCH=$(GOARCH) GOEXPERIMENT=$(GOEXPERIMENT) go build -trimpath -tags "$(TAGS)" -ldflags="-s -w -X safnari/version.Version=$(VERSION)" -o ../$(BIN) ./cmd
+
+build-release-all:
+	@set -e; for platform in $(PLATFORMS); do \
+		os=$${platform%/*}; arch=$${platform#*/}; \
+		GOOS=$$os GOARCH=$$arch $(MAKE) build-release VERSION=$(VERSION); \
+	done
+
 build-all:
 	@mkdir -p $(BIN_DIR)
-	@for platform in $(PLATFORMS); do \
+	@set -e; for platform in $(PLATFORMS); do \
 		os=$${platform%/*}; arch=$${platform#*/}; \
 		GOOS=$$os GOARCH=$$arch $(MAKE) build; \
 	done
@@ -72,8 +84,8 @@ bench-compare:
 	fi
 	./scripts/bench/compare.sh "$$BASELINE" "$$CANDIDATE" "$${OUT:-}"
 
-bench-simd:
-	./scripts/bench/simd.sh
+release-gate-v3:
+	python3 scripts/bench/release-gate-v3.py --baseline-bench "$(BASELINE_BENCH)" --candidate-bench "$(CANDIDATE_BENCH)" --baseline-bin-dir "$(BASELINE_BIN_DIR)" --candidate-bin-dir "$(CANDIDATE_BIN_DIR)" $(if $(BASELINE_PROCESS),--baseline-process "$(BASELINE_PROCESS)") $(if $(CANDIDATE_PROCESS),--candidate-process "$(CANDIDATE_PROCESS)")
 
 clean:
 	rm -rf $(BIN_DIR)

@@ -25,11 +25,6 @@ func BenchmarkScanFilesSyntheticTree(b *testing.B) {
 	b.Run("ultra", func(b *testing.B) {
 		benchmarkScanFilesOnRoot(b, root, func(cfg *config.Config) {
 			cfg.PerfProfile = "ultra"
-			cfg.SensitiveEngine = "deterministic"
-			cfg.SensitiveLongtail = "off"
-			cfg.ContentReadMode = "stream"
-			cfg.MmapMinSize = 128 * 1024
-			cfg.SimdFastpath = false
 		})
 	})
 }
@@ -57,11 +52,6 @@ func BenchmarkScanFilesCorpora(b *testing.B) {
 			b.Run("ultra", func(b *testing.B) {
 				benchmarkScanFilesOnRoot(b, root, func(cfg *config.Config) {
 					cfg.PerfProfile = "ultra"
-					cfg.SensitiveEngine = "deterministic"
-					cfg.SensitiveLongtail = "off"
-					cfg.ContentReadMode = "stream"
-					cfg.MmapMinSize = 128 * 1024
-					cfg.SimdFastpath = false
 				})
 			})
 		})
@@ -99,11 +89,6 @@ func BenchmarkDeltaSecondRunCorpora(b *testing.B) {
 			b.Run("ultra", func(b *testing.B) {
 				benchmarkDeltaSecondRunOnRoot(b, corpus.build, corpus.mutate, func(cfg *config.Config) {
 					cfg.PerfProfile = "ultra"
-					cfg.SensitiveEngine = "deterministic"
-					cfg.SensitiveLongtail = "off"
-					cfg.ContentReadMode = "stream"
-					cfg.MmapMinSize = 128 * 1024
-					cfg.SimdFastpath = false
 				})
 			})
 		})
@@ -233,7 +218,6 @@ func benchmarkConfig(root, outPath string) *config.Config {
 		SensitiveEngine:      "auto",
 		SensitiveLongtail:    "sampled",
 		SensitiveWindowBytes: 4096,
-		ContentReadMode:      "auto",
 		StreamChunkSize:      256 * 1024,
 		StreamOverlapBytes:   512,
 		JSONLayout:           "ndjson",

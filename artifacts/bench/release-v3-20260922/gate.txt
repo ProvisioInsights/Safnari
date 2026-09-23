@@ -1,0 +1,20 @@
+small_files: median speedup 1.068x
+small_files: process p95 ratio 0.944x
+small_files: peak RSS ratio 0.927x
+mixed_heavy_tail: median speedup 1.152x
+mixed_heavy_tail: process p95 ratio 1.004x
+mixed_heavy_tail: peak RSS ratio 0.922x
+sensitive_dense: median speedup 1.005x
+sensitive_dense: process p95 ratio 0.974x
+sensitive_dense: peak RSS ratio 0.922x
+duplicate_logs: median speedup 0.952x
+duplicate_logs: process p95 ratio 0.994x
+duplicate_logs: peak RSS ratio 0.923x
+geometric mean throughput speedup: 1.041x
+darwin-arm64: 15,481,010 bytes, 40.5% smaller
+darwin-amd64: 16,528,560 bytes, 39.4% smaller
+linux-amd64: 16,052,386 bytes, 39.9% smaller
+linux-arm64: 14,942,370 bytes, 41.1% smaller
+windows-amd64.exe: 16,584,704 bytes, 39.3% smaller
+BLOCKER: duplicate_logs: median slowdown exceeds 5%
+BLOCKER: geometric mean throughput below 2x

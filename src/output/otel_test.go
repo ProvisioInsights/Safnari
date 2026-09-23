@@ -1,13 +1,111 @@
 package output
 
 import (
+	"context"
+	"encoding/json"
+	"errors"
+	"net/http"
+	"net/http/httptest"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"safnari/config"
 
 	otelLog "go.opentelemetry.io/otel/log"
 	semconv "go.opentelemetry.io/otel/semconv/v1.40.0"
 )
+
+func testExportBatch(t *testing.T, cfg *config.Config) error {
+	t.Helper()
+	otel, err := newOtelLogger(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer otel.Shutdown()
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	return otel.ExportBatch(ctx, []spoolItem{{
+		RecordType: "scan_start", Payload: json.RawMessage(`{"status":"running"}`),
+	}})
+}
+
+func TestOTELExportAuthenticationAndTransportFailures(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "Bearer test" {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		w.Header().Set("Content-Type", "application/x-protobuf")
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+	cfg := &config.Config{OtelEndpoint: server.URL + "/v1/logs", OtelTimeout: time.Second}
+	if err := testExportBatch(t, cfg); !errors.Is(err, ErrRejectedDelivery) {
+		t.Fatalf("expected permanent authentication rejection, got %v", err)
+	}
+	cfg.OtelHeaders = map[string]string{"Authorization": "Bearer test"}
+	if err := testExportBatch(t, cfg); err != nil {
+		t.Fatalf("expected authenticated export, got %v", err)
+	}
+
+	tlsServer := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer tlsServer.Close()
+	if err := testExportBatch(t, &config.Config{
+		OtelEndpoint: tlsServer.URL + "/v1/logs", OtelTimeout: 50 * time.Millisecond,
+	}); !errors.Is(err, ErrPendingDelivery) {
+		t.Fatalf("expected retryable TLS trust failure, got %v", err)
+	}
+}
+
+func TestOTELExportTimeoutAndOversizedResponse(t *testing.T) {
+	slow := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		time.Sleep(150 * time.Millisecond)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer slow.Close()
+	if err := testExportBatch(t, &config.Config{
+		OtelEndpoint: slow.URL + "/v1/logs", OtelTimeout: 25 * time.Millisecond,
+	}); !errors.Is(err, ErrPendingDelivery) {
+		t.Fatalf("expected pending delivery after timeout, got %v", err)
+	}
+
+	large := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = w.Write(make([]byte, 5<<20))
+	}))
+	defer large.Close()
+	if err := testExportBatch(t, &config.Config{
+		OtelEndpoint: large.URL + "/v1/logs", OtelTimeout: time.Second,
+	}); !errors.Is(err, ErrRejectedDelivery) {
+		t.Fatalf("expected terminal rejection for oversized response, got %v", err)
+	}
+}
+
+func TestOTELExportHonorsRetryAfter(t *testing.T) {
+	var attempts atomic.Int64
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		if attempts.Add(1) == 1 {
+			w.Header().Set("Retry-After", "1")
+			w.WriteHeader(http.StatusTooManyRequests)
+			return
+		}
+		w.Header().Set("Content-Type", "application/x-protobuf")
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+	start := time.Now()
+	if err := testExportBatch(t, &config.Config{
+		OtelEndpoint: server.URL + "/v1/logs", OtelTimeout: 3 * time.Second,
+	}); err != nil {
+		t.Fatalf("expected accepted retry, got %v", err)
+	}
+	if attempts.Load() != 2 || time.Since(start) < time.Second {
+		t.Fatalf("retry ignored Retry-After: %d attempts in %v", attempts.Load(), time.Since(start))
+	}
+}
 
 func findAttr(kvs []otelLog.KeyValue, key string) (otelLog.Value, bool) {
 	for _, kv := range kvs {
@@ -43,8 +141,12 @@ func TestResolveOtelEndpoint(t *testing.T) {
 
 	t.Setenv("OTEL_EXPORTER_OTLP_LOGS_ENDPOINT", "")
 	cfg = &config.Config{OtelFromEnv: true}
-	if got := resolveOtelEndpoint(cfg); got != "https://fallback.example.test" {
+	if got := resolveOtelEndpoint(cfg); got != "https://fallback.example.test/v1/logs" {
 		t.Fatalf("expected fallback env endpoint, got %q", got)
+	}
+	t.Setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "https://fallback.example.test/prefix/")
+	if got := resolveOtelEndpoint(cfg); got != "https://fallback.example.test/prefix/v1/logs" {
+		t.Fatalf("expected base path with logs suffix, got %q", got)
 	}
 
 	cfg = &config.Config{OtelFromEnv: false}

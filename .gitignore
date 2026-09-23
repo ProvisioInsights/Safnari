@@ -20,6 +20,8 @@ bin/
 # Local tooling and reports
 .codex/
 .venv/
+__pycache__/
+*.pyc
 ownership-map-out/
 Safnari-threat-model.md
 security_best_practices_report.md

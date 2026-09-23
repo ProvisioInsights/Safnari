@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"os"
 	"syscall"
 	"testing"
@@ -60,5 +61,11 @@ func TestHandleSignalEventCancelsContextAndSetsMetrics(t *testing.T) {
 	}
 	if _, err := time.Parse(time.RFC3339, metrics.EndTime); err != nil {
 		t.Fatalf("invalid EndTime format: %v", err)
+	}
+}
+
+func TestDeliveryExitCodePrioritizesTerminalRejection(t *testing.T) {
+	if got := deliveryExitCode(errors.Join(output.ErrPendingDelivery, output.ErrRejectedDelivery)); got != 3 {
+		t.Fatalf("delivery exit code = %d, want 3", got)
 	}
 }

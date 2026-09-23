@@ -1,0 +1,41 @@
+{
+  "baseline_source_sha": "956d509702b48fa967ae0e339ce16f648cf470d2",
+  "baseline_source_tree_sha256": "3db01adbce2a4b5754f645c4629cd396a51fb543cf5ad137b2cb25e050800e7b",
+  "candidate_base_sha": "956d509702b48fa967ae0e339ce16f648cf470d2",
+  "candidate_uncommitted_source_tree_sha256": "d16f31a2a1808a9c05e9677aab4b24728d0e14e44f022d1eea9fbc60b8c6bcd1",
+  "go_version": "go version go1.26.3 darwin/arm64",
+  "build_flags": [
+    "GOEXPERIMENT=jsonv2",
+    "-tags jsonv2",
+    "-trimpath",
+    "-ldflags=-s -w"
+  ],
+  "benchmark_command": "GOEXPERIMENT=jsonv2 go test -tags jsonv2 -run '^$' -bench '^BenchmarkScanFilesCorpora/(small_files|mixed_heavy_tail|sensitive_dense|duplicate_logs)/adaptive$' -benchmem -count=9 ./scanner",
+  "size": {
+    "safnari-darwin-amd64": {
+      "baseline_bytes": 27261808,
+      "candidate_bytes": 16528560,
+      "candidate_sha256": "e4b14d91aee0979a588b731a9b26fe3f740af681e4863fc123d41f8a7ae1479b"
+    },
+    "safnari-darwin-arm64": {
+      "baseline_bytes": 26037698,
+      "candidate_bytes": 15481010,
+      "candidate_sha256": "2cb3dcf080bf9db215bf51d0756713c0fb282e70770a7fd67fcc2ee07913bc3f"
+    },
+    "safnari-linux-amd64": {
+      "baseline_bytes": 26714274,
+      "candidate_bytes": 16052386,
+      "candidate_sha256": "871a7120cd6f704c1eae80c5f987a430b3dc10dc051b22e4916e4000e2617c53"
+    },
+    "safnari-linux-arm64": {
+      "baseline_bytes": 25362594,
+      "candidate_bytes": 14942370,
+      "candidate_sha256": "437ddd12fcf7b8cce55c686db47a6ca578ffa34c8495aa9eef281b36f69211bb"
+    },
+    "safnari-windows-amd64.exe": {
+      "baseline_bytes": 27308032,
+      "candidate_bytes": 16584704,
+      "candidate_sha256": "bfeef8e39abcb6743334cd0cf2baea74c809f94b4d470704c5596d6a6697e6e1"
+    }
+  }
+}

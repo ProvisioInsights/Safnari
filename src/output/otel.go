@@ -4,10 +4,16 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net"
+	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"safnari/config"
@@ -24,10 +30,97 @@ import (
 type otelLogger struct {
 	provider *sdklog.LoggerProvider
 	logger   otelLog.Logger
+	exporter *otlploghttp.Exporter
+	capture  *captureExporter
+	status   *atomic.Int64
 	timeout  time.Duration
 	endpoint string
 	policy   otelPolicy
 }
+
+type statusTransport struct {
+	base      http.RoundTripper
+	status    *atomic.Int64
+	retryGate *retryGate
+}
+
+type retryGate struct {
+	mu    sync.Mutex
+	until time.Time
+}
+
+func (g *retryGate) wait(ctx context.Context) error {
+	for {
+		g.mu.Lock()
+		delay := time.Until(g.until)
+		g.mu.Unlock()
+		if delay <= 0 {
+			return nil
+		}
+		timer := time.NewTimer(delay)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return ctx.Err()
+		case <-timer.C:
+		}
+	}
+}
+
+func (g *retryGate) honor(header http.Header) {
+	value := strings.TrimSpace(header.Get("Retry-After"))
+	if value == "" {
+		return
+	}
+	var until time.Time
+	if seconds, err := strconv.ParseInt(value, 10, 64); err == nil {
+		if seconds <= 0 {
+			return
+		}
+		maxSeconds := int64((1<<63 - 1) / int64(time.Second))
+		if seconds > maxSeconds {
+			seconds = maxSeconds
+		}
+		until = time.Now().Add(time.Duration(seconds) * time.Second)
+	} else if date, err := http.ParseTime(value); err == nil {
+		until = date
+	}
+	g.mu.Lock()
+	if until.After(g.until) {
+		g.until = until
+	}
+	g.mu.Unlock()
+}
+
+func (t statusTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	if err := t.retryGate.wait(req.Context()); err != nil {
+		return nil, err
+	}
+	resp, err := t.base.RoundTrip(req)
+	if resp != nil {
+		t.status.Store(int64(resp.StatusCode))
+		switch resp.StatusCode {
+		case http.StatusTooManyRequests, http.StatusBadGateway,
+			http.StatusServiceUnavailable, http.StatusGatewayTimeout:
+			t.retryGate.honor(resp.Header)
+		}
+	}
+	return resp, err
+}
+
+// captureExporter lets the SDK attach resource and scope to records before a
+// batch is synchronously exported. The SDK's default batch processor cannot
+// tell the durable queue which records the receiver accepted.
+type captureExporter struct {
+	records []sdklog.Record
+}
+
+func (c *captureExporter) Export(_ context.Context, records []sdklog.Record) error {
+	c.records = append(c.records, records...)
+	return nil
+}
+func (c *captureExporter) ForceFlush(context.Context) error { return nil }
+func (c *captureExporter) Shutdown(context.Context) error   { return nil }
 
 type otelPolicy struct {
 	includePaths     bool
@@ -43,16 +136,37 @@ func newOtelLogger(cfg *config.Config) (*otelLogger, error) {
 	if endpoint == "" {
 		return nil, nil
 	}
-	if !strings.HasPrefix(endpoint, "http://") && !strings.HasPrefix(endpoint, "https://") {
-		return nil, fmt.Errorf("otel endpoint must include scheme (http or https)")
+	parsed, err := url.Parse(endpoint)
+	if err != nil || parsed.Hostname() == "" || (parsed.Scheme != "https" && parsed.Scheme != "http") {
+		return nil, fmt.Errorf("OTEL endpoint must be a valid HTTP(S) URL")
 	}
-
-	opts := []otlploghttp.Option{otlploghttp.WithEndpointURL(endpoint)}
+	if parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" {
+		return nil, fmt.Errorf("OTEL endpoint must not contain credentials, query, or fragment")
+	}
+	if parsed.Scheme == "http" && parsed.Hostname() != "localhost" {
+		ip := net.ParseIP(parsed.Hostname())
+		if ip == nil || !ip.IsLoopback() {
+			return nil, fmt.Errorf("OTEL HTTP is allowed only for loopback endpoints")
+		}
+	}
+	timeout := cfg.OtelTimeout
+	if timeout <= 0 {
+		timeout = 5 * time.Second
+	}
+	status := &atomic.Int64{}
+	client := &http.Client{Transport: statusTransport{
+		base: http.DefaultTransport, status: status, retryGate: &retryGate{},
+	}, Timeout: timeout}
+	opts := []otlploghttp.Option{
+		otlploghttp.WithEndpointURL(endpoint),
+		otlploghttp.WithHTTPClient(client),
+		otlploghttp.WithRetry(otlploghttp.RetryConfig{
+			Enabled: true, InitialInterval: 500 * time.Millisecond,
+			MaxInterval: 30 * time.Second, MaxElapsedTime: time.Minute,
+		}),
+	}
 	if len(cfg.OtelHeaders) > 0 {
 		opts = append(opts, otlploghttp.WithHeaders(cfg.OtelHeaders))
-	}
-	if cfg.OtelTimeout > 0 {
-		opts = append(opts, otlploghttp.WithTimeout(cfg.OtelTimeout))
 	}
 
 	exp, err := otlploghttp.New(context.Background(), opts...)
@@ -64,15 +178,19 @@ func newOtelLogger(cfg *config.Config) (*otelLogger, error) {
 		semconv.SchemaURL,
 		semconv.ServiceNameKey.String(cfg.OtelServiceName),
 	)
+	capture := &captureExporter{}
 	provider := sdklog.NewLoggerProvider(
-		sdklog.WithProcessor(sdklog.NewBatchProcessor(exp)),
+		sdklog.WithProcessor(sdklog.NewSimpleProcessor(capture)),
 		sdklog.WithResource(res),
 	)
 
 	return &otelLogger{
 		provider: provider,
 		logger:   provider.Logger("safnari"),
-		timeout:  cfg.OtelTimeout,
+		exporter: exp,
+		capture:  capture,
+		status:   status,
+		timeout:  timeout,
 		endpoint: endpoint,
 		policy: otelPolicy{
 			includePaths:     cfg.OtelExportPaths,
@@ -80,6 +198,42 @@ func newOtelLogger(cfg *config.Config) (*otelLogger, error) {
 			includeCmdline:   cfg.OtelExportCmdline,
 		},
 	}, nil
+}
+
+// ExportBatch must be called by a single delivery worker. A nil error is the
+// OTLP receiver's acceptance of the entire batch, not downstream indexing.
+func (o *otelLogger) ExportBatch(ctx context.Context, items []spoolItem) error {
+	if o == nil || len(items) == 0 {
+		return nil
+	}
+	o.capture.records = o.capture.records[:0]
+	o.status.Store(0)
+	for _, item := range items {
+		var payload interface{}
+		if err := json.Unmarshal(item.Payload, &payload); err != nil {
+			return err
+		}
+		o.Emit(item.RecordType, payload)
+		record := &o.capture.records[len(o.capture.records)-1]
+		record.AddAttributes(
+			otelLog.String("safnari.device_id", item.DeviceID),
+			otelLog.String("safnari.scan_id", item.ScanID),
+			otelLog.Int64("safnari.sequence", int64(item.Sequence)),
+			otelLog.String("safnari.event_id", item.EventID),
+			otelLog.String("safnari.observed_at", item.ObservedAt),
+			otelLog.String("safnari.scanner_version", item.ScannerVersion),
+			otelLog.String("safnari.policy_digest", item.PolicyDigest),
+		)
+	}
+	err := o.exporter.Export(ctx, o.capture.records)
+	if err == nil {
+		return nil
+	}
+	status := o.status.Load()
+	if status == 200 || (status >= 400 && status < 500 && status != 429) || (status >= 500 && status != 502 && status != 503 && status != 504) {
+		return fmt.Errorf("%w: receiver status %d: %v", ErrRejectedDelivery, status, err)
+	}
+	return fmt.Errorf("%w: %v", ErrPendingDelivery, err)
 }
 
 func resolveOtelEndpoint(cfg *config.Config) string {
@@ -95,7 +249,17 @@ func resolveOtelEndpoint(cfg *config.Config) string {
 	if endpoint := strings.TrimSpace(os.Getenv("OTEL_EXPORTER_OTLP_LOGS_ENDPOINT")); endpoint != "" {
 		return endpoint
 	}
-	return strings.TrimSpace(os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT"))
+	base := strings.TrimSpace(os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT"))
+	if base == "" {
+		return ""
+	}
+	parsed, err := url.Parse(base)
+	if err != nil {
+		return base
+	}
+	parsed.Path = strings.TrimRight(parsed.Path, "/") + "/v1/logs"
+	parsed.RawPath = ""
+	return parsed.String()
 }
 
 func (o *otelLogger) Endpoint() string {
@@ -158,6 +322,9 @@ func (o *otelLogger) Shutdown() {
 	if err := o.provider.Shutdown(ctx); err != nil {
 		logger.Debugf("OTEL shutdown failed: %v", err)
 	}
+	if err := o.exporter.Shutdown(ctx); err != nil {
+		logger.Debugf("OTEL exporter shutdown failed: %v", err)
+	}
 }
 
 func sanitizePayload(recordType string, payload interface{}, policy otelPolicy) interface{} {
@@ -174,13 +341,16 @@ func sanitizePayload(recordType string, payload interface{}, policy otelPolicy) 
 		}
 		if !policy.includeSensitive {
 			delete(sanitized, "sensitive_data")
-			delete(sanitized, "sensitive_data_match_counts")
-			delete(sanitized, "sensitive_data_truncated")
 			delete(sanitized, "search_hits")
 			delete(sanitized, "metadata")
 			delete(sanitized, "xattrs")
 			delete(sanitized, "acl")
 			delete(sanitized, "alternate_data_streams")
+			delete(sanitized, "collection_warnings")
+		}
+		// A basename can reveal as much as a full path.
+		if !policy.includePaths {
+			delete(sanitized, "name")
 		}
 		return sanitized
 	case "process":
@@ -190,6 +360,10 @@ func sanitizePayload(recordType string, payload interface{}, policy otelPolicy) 
 		}
 		if !policy.includePaths {
 			delete(sanitized, "exe")
+			delete(sanitized, "name")
+		}
+		if !policy.includeSensitive {
+			delete(sanitized, "username")
 		}
 		return sanitized
 	case "system_info":
@@ -199,9 +373,6 @@ func sanitizePayload(recordType string, payload interface{}, policy otelPolicy) 
 		sanitized := map[string]interface{}{}
 		if osVersion := getFieldValue(data, "os_version"); osVersion != nil {
 			sanitized["os_version"] = osVersion
-		}
-		if warnings := getFieldValue(data, "collection_warnings"); warnings != nil {
-			sanitized["collection_warnings"] = warnings
 		}
 		addSliceCount(sanitized, "installed_patches_count", getFieldValue(data, "installed_patches"))
 		addSliceCount(sanitized, "startup_programs_count", getFieldValue(data, "startup_programs"))
