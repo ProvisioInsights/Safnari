@@ -10,7 +10,7 @@ latest benchmark run published by the GitHub Performance workflow.
 
 ## Measured release performance
 
-The schema-v3 candidate reached a **3.146× geometric-mean throughput gain** across four
+The schema-v3 candidate reached a **2.406× geometric-mean throughput gain** across four
 representative workloads against the frozen pre-optimization source. The paired, controlled
 macOS ARM64 run used Go 1.27.1, equivalent detection coverage, and nine benchmark samples per
 workload. Its process tail-latency and peak-memory gates passed as well.
@@ -24,8 +24,9 @@ builds. The macOS ARM64 executable measured 15,796,290 bytes, below the 16 MiB r
 
 These are warm-cache, scan-only measurements; cold-cache behavior and managed-delivery overhead
 are not established by these charts. The Go 1.27.1 toolchain change alone measured 0.982×
-throughput against Go 1.26.8. See the [raw controlled-run evidence](artifacts/bench/go127-controlled-20260923/),
-the [source workflow run](https://github.com/ProvisioInsights/Safnari/actions/runs/35874567210),
+throughput against Go 1.26.8. An earlier controlled run measured 3.146× on the same scanner
+code; both results are retained. See the [RC3 raw evidence](artifacts/bench/rc3-controlled-20260923/),
+the [RC3 workflow run](https://github.com/ProvisioInsights/Safnari/actions/runs/35880325070),
 and the [remaining release gates](docs/release-gates-v3.md).
 
 ## Features

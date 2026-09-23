@@ -382,9 +382,13 @@ SBOM generation. These results do not measure managed-delivery overhead or cold-
 Go 1.27 raises the minimum supported macOS version to 13 Ventura.
 The published [controlled-run artifact](../artifacts/bench/go127-controlled-20260923/)
 contains the benchmark samples, process samples, build context, binary hashes, and gate output
-used for the [throughput](assets/release-v3-throughput.svg) and
-[size](assets/release-v3-size.svg) charts on the repository landing page. The charts describe
-that exact PR head and the frozen source, not a claim that the Go upgrade itself improved speed.
+for the Go 1.27.1 source head. A newer [RC3 controlled run](../artifacts/bench/rc3-controlled-20260923/)
+on PR head `ede7811a322a38672c4c7a687ec2ad7a2582abb7` measured 2.406x geometric-mean
+throughput against the same frozen source. Its worst process p95 ratio was 0.825x and worst
+peak-RSS ratio was 0.896x; file evidence and all five stripped size gates passed. The
+[throughput](assets/release-v3-throughput.svg) and [size](assets/release-v3-size.svg) charts on
+the repository landing page show this newer run. The two controlled runs differ despite the
+same scanner code, so neither should be presented as a toolchain-only improvement.
 
 ## Validation and unresolved gates
 

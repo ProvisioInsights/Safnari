@@ -11,17 +11,19 @@ before replacing a schema-v2 installation, and preserve any v3 spool when rollin
 ## Measured performance
 
 The controlled macOS ARM64, warm-cache, scan-only comparison against frozen source
-`956d509702b48fa967ae0e339ce16f648cf470d2` measured a **3.146× geometric-mean
-throughput gain** at equivalent coverage. The four workload gains were 2.584× for small files,
-3.145× for mixed heavy-tail files, 2.895× for sensitive-dense text, and 4.164× for duplicate
+`956d509702b48fa967ae0e339ce16f648cf470d2` measured a **2.406× geometric-mean
+throughput gain** at equivalent coverage. The four workload gains were 2.289× for small files,
+2.156× for mixed heavy-tail files, 1.823× for sensitive-dense text, and 3.724× for duplicate
 logs. Process p95 and peak RSS passed the release limits. All five stripped targets were at
 least 38% smaller; macOS ARM64 measured 15,796,290 bytes. The Go 1.27.1 toolchain change alone
 measured 0.982× throughput relative to Go 1.26.8.
+An earlier controlled run on the same scanner code measured 3.146× and remains in the
+repository; the charts show the newer RC3 PR run.
 
 See the [throughput chart](https://github.com/ProvisioInsights/Safnari/blob/safnari-20260923a-rc3/docs/assets/release-v3-throughput.svg),
 [size chart](https://github.com/ProvisioInsights/Safnari/blob/safnari-20260923a-rc3/docs/assets/release-v3-size.svg),
-[raw evidence](https://github.com/ProvisioInsights/Safnari/tree/safnari-20260923a-rc3/artifacts/bench/go127-controlled-20260923), and
-[controlled workflow run](https://github.com/ProvisioInsights/Safnari/actions/runs/35874567210).
+[raw evidence](https://github.com/ProvisioInsights/Safnari/tree/safnari-20260923a-rc3/artifacts/bench/rc3-controlled-20260923), and
+[controlled workflow run](https://github.com/ProvisioInsights/Safnari/actions/runs/35880325070).
 The charts exclude cold-cache scans and managed-delivery overhead.
 
 ## Release boundary
