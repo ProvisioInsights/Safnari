@@ -57,11 +57,12 @@ Current CI behavior is intentionally split:
   `benchmark-matrix`.
 
 Each benchmark artifact now includes a machine-readable `metrics.json` file and
-a static `site/index.html` dashboard. Non-PR performance runs publish the
+a static `site/index.html` dashboard. Pushes to `main` publish the
 Linux/amd64 dashboard to GitHub Pages so the latest tracked metrics are visible
 from the repository without downloading workflow artifacts. The publish job
 carries forward `metrics-history.jsonl` from the previous Pages deployment,
 appends the new run, and renders the recent history into the dashboard.
+Tag runs retain benchmark artifacts but do not deploy to the main-only Pages environment.
 
 ## Before And After
 
