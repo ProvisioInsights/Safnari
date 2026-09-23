@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
+source "$(dirname "${BASH_SOURCE[0]}")/bash-compat.sh"
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 OUT_DIR="${1:-$ROOT/artifacts/bench/$(date -u +%Y%m%d-%H%M%S)}"
@@ -202,21 +203,29 @@ fi
 timestamp="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
 commit="$(git -C "$ROOT" rev-parse --short HEAD)"
 
-sed \
-  -e "s/<timestamp>/$timestamp/g" \
-  -e "s/<commit>/$commit/g" \
-  -e "s/<profile-name>/ultra/g" \
-  -e "s/<synthetic_p50_ms>/$synthetic_p50_ms/g" \
-  -e "s/<synthetic_p95_ms>/$synthetic_p95_ms/g" \
-  -e "s/<synthetic_bytes_per_op>/$synthetic_bytes_per_op/g" \
-  -e "s/<synthetic_allocs_per_op>/$synthetic_allocs_per_op/g" \
-  -e "s/<sensitive_dense_p50_ms>/$sensitive_dense_p50_ms/g" \
-  -e "s/<small_files_p50_ms>/$small_files_p50_ms/g" \
-  -e "s/<mixed_heavy_tail_p50_ms>/$mixed_heavy_tail_p50_ms/g" \
-  -e "s/<duplicate_logs_p50_ms>/$duplicate_logs_p50_ms/g" \
-  -e "s/<delta_second_run_p50_ms>/$delta_second_run_p50_ms/g" \
-  -e "s/<peak_rss_kb>/$peak_rss_kb/g" \
-  "$ROOT/scripts/bench/report-template.md" >"$OUT_DIR/report.md"
+python3 - "$ROOT/scripts/bench/report-template.md" "$OUT_DIR/report.md" \
+  "$timestamp" "$commit" "$synthetic_p50_ms" "$synthetic_p95_ms" \
+  "$synthetic_bytes_per_op" "$synthetic_allocs_per_op" "$sensitive_dense_p50_ms" \
+  "$small_files_p50_ms" "$mixed_heavy_tail_p50_ms" "$duplicate_logs_p50_ms" \
+  "$delta_second_run_p50_ms" "$peak_rss_kb" <<'PY'
+from pathlib import Path
+import sys
+
+keys = (
+    "timestamp", "commit", "synthetic_p50_ms", "synthetic_p95_ms",
+    "synthetic_bytes_per_op", "synthetic_allocs_per_op", "sensitive_dense_p50_ms",
+    "small_files_p50_ms", "mixed_heavy_tail_p50_ms", "duplicate_logs_p50_ms",
+    "delta_second_run_p50_ms", "peak_rss_kb",
+)
+source, output, *values = sys.argv[1:]
+if len(values) != len(keys):
+    raise SystemExit("benchmark report argument count mismatch")
+report = Path(source).read_text()
+for key, value in zip(keys, values):
+    report = report.replace(f"<{key}>", value)
+report = report.replace("<profile-name>", "ultra")
+Path(output).write_text(report)
+PY
 
 cat >>"$OUT_DIR/report.md" <<EOF
 

@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="480" viewBox="0 0 960 480" role="img" aria-labelledby="title description">
+<title id="title">Safnari controlled scan throughput</title>
+<desc id="description">Four workload speedups against the frozen source are 2.289 times for Small files, 2.156 times for Mixed heavy tail, 1.823 times for Sensitive dense, 3.724 times for Duplicate logs. Geometric mean 2.406 times. Two times is the release target.</desc>
+<rect width="960" height="480" fill="#ffffff"/>
+<text x="48" y="52" fill="#14263d" font-size="28" font-weight="700" text-anchor="start" font-family="Arial, Helvetica, sans-serif">Scan throughput by workload</text>
+<text x="48" y="82" fill="#526579" font-size="16" font-weight="400" text-anchor="start" font-family="Arial, Helvetica, sans-serif">Warm-cache scan-only comparison at equivalent coverage</text>
+<text x="912" y="51" fill="#087f77" font-size="30" font-weight="700" text-anchor="end" font-family="Arial, Helvetica, sans-serif">2.41×</text>
+<text x="912" y="76" fill="#526579" font-size="14" font-weight="400" text-anchor="end" font-family="Arial, Helvetica, sans-serif">geometric mean</text>
+<line x1="245.0" y1="121" x2="245.0" y2="363" stroke="#657587" stroke-width="1"/>
+<text x="245.0" y="388" fill="#526579" font-size="13" font-weight="400" text-anchor="middle" font-family="Arial, Helvetica, sans-serif">0×</text>
+<line x1="360.0" y1="121" x2="360.0" y2="363" stroke="#dbe3e9" stroke-width="1"/>
+<text x="360.0" y="388" fill="#526579" font-size="13" font-weight="400" text-anchor="middle" font-family="Arial, Helvetica, sans-serif">1×</text>
+<line x1="475.0" y1="121" x2="475.0" y2="363" stroke="#dbe3e9" stroke-width="1"/>
+<text x="475.0" y="388" fill="#526579" font-size="13" font-weight="400" text-anchor="middle" font-family="Arial, Helvetica, sans-serif">2×</text>
+<line x1="590.0" y1="121" x2="590.0" y2="363" stroke="#dbe3e9" stroke-width="1"/>
+<text x="590.0" y="388" fill="#526579" font-size="13" font-weight="400" text-anchor="middle" font-family="Arial, Helvetica, sans-serif">3×</text>
+<line x1="705.0" y1="121" x2="705.0" y2="363" stroke="#dbe3e9" stroke-width="1"/>
+<text x="705.0" y="388" fill="#526579" font-size="13" font-weight="400" text-anchor="middle" font-family="Arial, Helvetica, sans-serif">4×</text>
+<line x1="820.0" y1="121" x2="820.0" y2="363" stroke="#dbe3e9" stroke-width="1"/>
+<text x="820.0" y="388" fill="#526579" font-size="13" font-weight="400" text-anchor="middle" font-family="Arial, Helvetica, sans-serif">5×</text>
+<line x1="475.0" y1="118" x2="475.0" y2="363" stroke="#087f77" stroke-width="2" stroke-dasharray="6 5"/>
+<text x="482.0" y="113" fill="#087f77" font-size="13" font-weight="700" text-anchor="start" font-family="Arial, Helvetica, sans-serif">2× release target</text>
+<text x="215" y="167" fill="#14263d" font-size="17" font-weight="600" text-anchor="end" font-family="Arial, Helvetica, sans-serif">Small files</text>
+<rect x="245" y="145" width="263.2" height="31" fill="#2866a3"/>
+<text x="520.235" y="167" fill="#14263d" font-size="17" font-weight="700" text-anchor="start" font-family="Arial, Helvetica, sans-serif">2.29×</text>
+<text x="215" y="222" fill="#14263d" font-size="17" font-weight="600" text-anchor="end" font-family="Arial, Helvetica, sans-serif">Mixed heavy tail</text>
+<rect x="245" y="200" width="247.9" height="31" fill="#2866a3"/>
+<text x="504.94" y="222" fill="#14263d" font-size="17" font-weight="700" text-anchor="start" font-family="Arial, Helvetica, sans-serif">2.16×</text>
+<text x="215" y="277" fill="#14263d" font-size="17" font-weight="600" text-anchor="end" font-family="Arial, Helvetica, sans-serif">Sensitive dense</text>
+<rect x="245" y="255" width="209.6" height="31" fill="#2866a3"/>
+<text x="466.645" y="277" fill="#14263d" font-size="17" font-weight="700" text-anchor="start" font-family="Arial, Helvetica, sans-serif">1.82×</text>
+<text x="215" y="332" fill="#14263d" font-size="17" font-weight="600" text-anchor="end" font-family="Arial, Helvetica, sans-serif">Duplicate logs</text>
+<rect x="245" y="310" width="428.3" height="31" fill="#2866a3"/>
+<text x="685.26" y="332" fill="#14263d" font-size="17" font-weight="700" text-anchor="start" font-family="Arial, Helvetica, sans-serif">3.72×</text>
+<text x="48" y="429" fill="#526579" font-size="14" font-weight="400" text-anchor="start" font-family="Arial, Helvetica, sans-serif">9 benchmark samples per workload · macOS ARM64 · Go 1.27.1</text>
+<text x="48" y="451" fill="#526579" font-size="13" font-weight="400" text-anchor="start" font-family="Arial, Helvetica, sans-serif">Frozen source 956d509  →  candidate ede7811 · cold cache and delivery excluded</text>
+</svg>

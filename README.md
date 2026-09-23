@@ -8,6 +8,27 @@ configuration flags for filtering, hashing, and output control.
 [Performance dashboard](https://provisioinsights.github.io/Safnari/) tracks the
 latest benchmark run published by the GitHub Performance workflow.
 
+## Measured release performance
+
+The schema-v3 candidate reached a **2.406× geometric-mean throughput gain** across four
+representative workloads against the frozen pre-optimization source. The paired, controlled
+macOS ARM64 run used Go 1.27.1, equivalent detection coverage, and nine benchmark samples per
+workload. Its process tail-latency and peak-memory gates passed as well.
+
+![Four workload scan throughput gains against the frozen source](docs/assets/release-v3-throughput.svg)
+
+All five stripped release targets were at least 38% smaller than equally stripped baseline
+builds. The macOS ARM64 executable measured 15,796,290 bytes, below the 16 MiB release limit.
+
+![Five platform executable size reductions against the frozen source](docs/assets/release-v3-size.svg)
+
+These are warm-cache, scan-only measurements; cold-cache behavior and managed-delivery overhead
+are not established by these charts. The Go 1.27.1 toolchain change alone measured 0.982×
+throughput against Go 1.26.8. An earlier controlled run measured 3.146× on the same scanner
+code; both results are retained. See the [RC3 raw evidence](artifacts/bench/rc3-controlled-20260923/),
+the [RC3 workflow run](https://github.com/ProvisioInsights/Safnari/actions/runs/35880325070),
+and the [remaining release gates](docs/release-gates-v3.md).
+
 ## Features
 
 - Gather host information such as OS details, installed patches, and hostname
@@ -42,7 +63,8 @@ diagnostic build under `bin/debug/`.
 Use `make build-release-all VERSION=<tag>` to build all five release targets with an embedded
 version. Build outputs stay in `bin/`.
 
-Safnari enables the experimental JSON v2 encoder by default for better throughput.
+Safnari uses Go 1.27.1 and its stable JSON-v2 encoder for release builds. macOS builds require
+macOS 13 Ventura or later.
 
 Release builds embed the supplied tag. For example:
 
@@ -87,7 +109,8 @@ to tune the capture window.
 Check the [releases page](https://github.com/ProvisioInsights/Safnari/releases) for
 binaries for your operating system. Releases use the `safnari-<date><letter>` naming
 scheme, where `date` is in `YYYYMMDD` format and `letter` increments if multiple releases
-occur on the same day.
+occur on the same day. Schema-v3 release candidates have an `-rcN` suffix and are prereleases
+while managed-delivery validation and device pilots remain open.
 
 ## Usage
 
