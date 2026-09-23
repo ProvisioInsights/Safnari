@@ -1,0 +1,11 @@
+{
+  "source_run": "https://github.com/ProvisioInsights/Safnari/actions/runs/35874567210",
+  "baseline_source_sha": "956d509702b48fa967ae0e339ce16f648cf470d2",
+  "candidate_source_sha": "064ea76dce9c61b883c4f78118642ff11c8a425d",
+  "toolchain": "go version go1.27.1 darwin/arm64",
+  "platform": "Darwin sat12-bq159-f653620f-11de-4841-ae19-b7746803daea-463BBD50D077.local 24.6.0 Darwin Kernel Version 24.6.0: Tue Jul 21 20:51:34 PDT 2026; root:xnu-11417.140.69.711.44~1/RELEASE_ARM64_VMAPPLE arm64",
+  "measurement": "scan-only warm-cache; 9 benchmark samples and 90 paired process runs per workload",
+  "cold_cache_controlled": false,
+  "delivery_overhead_measured": false,
+  "note": "Copied from the schema-v3-release-evidence artifact of the successful controlled run."
+}

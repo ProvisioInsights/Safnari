@@ -1,0 +1,4 @@
+go version go1.27.1 darwin/arm64
+Darwin sat12-bq159-f653620f-11de-4841-ae19-b7746803daea-463BBD50D077.local 24.6.0 Darwin Kernel Version 24.6.0: Tue Jul 21 20:51:34 PDT 2026; root:xnu-11417.140.69.711.44~1/RELEASE_ARM64_VMAPPLE arm64
+956d509702b48fa967ae0e339ce16f648cf470d2
+064ea76dce9c61b883c4f78118642ff11c8a425d

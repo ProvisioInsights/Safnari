@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
+source "$(dirname "${BASH_SOURCE[0]}")/bash-compat.sh"
 
 if [[ $# -lt 2 || $# -gt 3 ]]; then
   echo "usage: $0 <baseline-benchmark.txt> <candidate-benchmark.txt> [output-file]" >&2

@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased: schema-v3 collector
+## safnari-20260923a-rc3: schema-v3 collector prerelease
 
 This is a breaking release. Update downstream consumers before replacing a schema-v2 binary.
 See [migration-v3.md](migration-v3.md) for configuration, spool, and rollback steps.
@@ -51,3 +51,8 @@ the toolchain alone did not improve scan speed. The controlled runner measured a
 four-workload speedup against the frozen pre-optimization source on the exact Go 1.27.1 PR head.
 Its process p95, memory, and five target-size gates passed. Native macOS, Linux ARM64, and Windows
 PR tests passed. See [release-gates-v3.md](release-gates-v3.md) for the evidence boundary.
+
+The RC3 repository update adds source-backed release charts and repairs the macOS and Windows
+performance-dashboard harness. The scanner and schema behavior are unchanged from the merged
+Go 1.27.1 candidate. This remains a prerelease pending managed-delivery validation and pilot
+evidence.

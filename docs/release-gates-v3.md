@@ -380,6 +380,11 @@ stripped target sizes passed, with macOS ARM64 at 15,796,290 bytes. The PR also 
 macOS ARM64 and Intel, Linux ARM64, and Windows tests, security checks, five build jobs, and
 SBOM generation. These results do not measure managed-delivery overhead or cold-cache behavior.
 Go 1.27 raises the minimum supported macOS version to 13 Ventura.
+The published [controlled-run artifact](../artifacts/bench/go127-controlled-20260923/)
+contains the benchmark samples, process samples, build context, binary hashes, and gate output
+used for the [throughput](assets/release-v3-throughput.svg) and
+[size](assets/release-v3-size.svg) charts on the repository landing page. The charts describe
+that exact PR head and the frozen source, not a claim that the Go upgrade itself improved speed.
 
 ## Validation and unresolved gates
 

@@ -1,0 +1,43 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="506" viewBox="0 0 960 506" role="img" aria-labelledby="title description">
+<title id="title">Safnari stripped executable size reduction</title>
+<desc id="description">Five executable size reductions against equally stripped frozen builds: 39.3 percent for macOS ARM64, 38.1 percent for macOS Intel, 38.6 percent for Linux AMD64, 39.8 percent for Linux ARM64, 38.1 percent for Windows AMD64. Thirty percent is the release target.</desc>
+<rect width="960" height="506" fill="#ffffff"/>
+<text x="48" y="52" fill="#14263d" font-size="28" font-weight="700" text-anchor="start" font-family="Arial, Helvetica, sans-serif">Stripped executable size</text>
+<text x="48" y="82" fill="#526579" font-size="16" font-weight="400" text-anchor="start" font-family="Arial, Helvetica, sans-serif">Reduction from equally stripped frozen-source builds</text>
+<line x1="280.0" y1="112" x2="280.0" y2="390" stroke="#657587" stroke-width="1"/>
+<text x="280.0" y="413" fill="#526579" font-size="13" font-weight="400" text-anchor="middle" font-family="Arial, Helvetica, sans-serif">0%</text>
+<line x1="382.0" y1="112" x2="382.0" y2="390" stroke="#dbe3e9" stroke-width="1"/>
+<text x="382.0" y="413" fill="#526579" font-size="13" font-weight="400" text-anchor="middle" font-family="Arial, Helvetica, sans-serif">10%</text>
+<line x1="484.0" y1="112" x2="484.0" y2="390" stroke="#dbe3e9" stroke-width="1"/>
+<text x="484.0" y="413" fill="#526579" font-size="13" font-weight="400" text-anchor="middle" font-family="Arial, Helvetica, sans-serif">20%</text>
+<line x1="586.0" y1="112" x2="586.0" y2="390" stroke="#dbe3e9" stroke-width="1"/>
+<text x="586.0" y="413" fill="#526579" font-size="13" font-weight="400" text-anchor="middle" font-family="Arial, Helvetica, sans-serif">30%</text>
+<line x1="688.0" y1="112" x2="688.0" y2="390" stroke="#dbe3e9" stroke-width="1"/>
+<text x="688.0" y="413" fill="#526579" font-size="13" font-weight="400" text-anchor="middle" font-family="Arial, Helvetica, sans-serif">40%</text>
+<line x1="790.0" y1="112" x2="790.0" y2="390" stroke="#dbe3e9" stroke-width="1"/>
+<text x="790.0" y="413" fill="#526579" font-size="13" font-weight="400" text-anchor="middle" font-family="Arial, Helvetica, sans-serif">50%</text>
+<line x1="586.0" y1="109" x2="586.0" y2="390" stroke="#087f77" stroke-width="2" stroke-dasharray="6 5"/>
+<text x="593.0" y="104" fill="#087f77" font-size="13" font-weight="700" text-anchor="start" font-family="Arial, Helvetica, sans-serif">30% release target</text>
+<text x="48" y="149" fill="#14263d" font-size="17" font-weight="600" text-anchor="start" font-family="Arial, Helvetica, sans-serif">macOS ARM64</text>
+<text x="48" y="167" fill="#526579" font-size="13" font-weight="400" text-anchor="start" font-family="Arial, Helvetica, sans-serif">15.06 MiB</text>
+<rect x="280" y="132" width="400.9" height="30" fill="#2866a3"/>
+<text x="690.86" y="154" fill="#14263d" font-size="17" font-weight="700" text-anchor="start" font-family="Arial, Helvetica, sans-serif">39.3%</text>
+<text x="48" y="200" fill="#14263d" font-size="17" font-weight="600" text-anchor="start" font-family="Arial, Helvetica, sans-serif">macOS Intel</text>
+<text x="48" y="218" fill="#526579" font-size="13" font-weight="400" text-anchor="start" font-family="Arial, Helvetica, sans-serif">16.09 MiB</text>
+<rect x="280" y="183" width="388.6" height="30" fill="#2866a3"/>
+<text x="678.62" y="205" fill="#14263d" font-size="17" font-weight="700" text-anchor="start" font-family="Arial, Helvetica, sans-serif">38.1%</text>
+<text x="48" y="251" fill="#14263d" font-size="17" font-weight="600" text-anchor="start" font-family="Arial, Helvetica, sans-serif">Linux AMD64</text>
+<text x="48" y="269" fill="#526579" font-size="13" font-weight="400" text-anchor="start" font-family="Arial, Helvetica, sans-serif">15.64 MiB</text>
+<rect x="280" y="234" width="393.7" height="30" fill="#2866a3"/>
+<text x="683.72" y="256" fill="#14263d" font-size="17" font-weight="700" text-anchor="start" font-family="Arial, Helvetica, sans-serif">38.6%</text>
+<text x="48" y="302" fill="#14263d" font-size="17" font-weight="600" text-anchor="start" font-family="Arial, Helvetica, sans-serif">Linux ARM64</text>
+<text x="48" y="320" fill="#526579" font-size="13" font-weight="400" text-anchor="start" font-family="Arial, Helvetica, sans-serif">14.56 MiB</text>
+<rect x="280" y="285" width="406.0" height="30" fill="#2866a3"/>
+<text x="695.96" y="307" fill="#14263d" font-size="17" font-weight="700" text-anchor="start" font-family="Arial, Helvetica, sans-serif">39.8%</text>
+<text x="48" y="353" fill="#14263d" font-size="17" font-weight="600" text-anchor="start" font-family="Arial, Helvetica, sans-serif">Windows AMD64</text>
+<text x="48" y="371" fill="#526579" font-size="13" font-weight="400" text-anchor="start" font-family="Arial, Helvetica, sans-serif">16.10 MiB</text>
+<rect x="280" y="336" width="388.6" height="30" fill="#2866a3"/>
+<text x="678.62" y="358" fill="#14263d" font-size="17" font-weight="700" text-anchor="start" font-family="Arial, Helvetica, sans-serif">38.1%</text>
+<text x="48" y="455" fill="#526579" font-size="14" font-weight="400" text-anchor="start" font-family="Arial, Helvetica, sans-serif">macOS ARM64: 15,796,290 bytes, below the 16 MiB limit</text>
+<text x="48" y="477" fill="#526579" font-size="13" font-weight="400" text-anchor="start" font-family="Arial, Helvetica, sans-serif">Same Go 1.27.1 toolchain and build flags for both source revisions · five cross-compiled targets</text>
+</svg>
