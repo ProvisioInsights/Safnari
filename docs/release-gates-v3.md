@@ -320,6 +320,12 @@ Process medians are a separate measure from the specified nine-sample Go benchma
 gate. The updated binary still needs that gate on a paired controlled runner. The labeled
 `Schema v3 release validation` workflow is prepared to run it on a fixed macOS ARM64 runner.
 
+The first controlled run on this revision collected matching process evidence but its baseline
+benchmark emitted millions of progress characters into the captured output. The benchmark
+parser could not recover nine clean samples per workload, and this run is not valid speed-gate
+evidence. Both benchmark and process harnesses now disable baseline progress display so the
+next paired run measures scanning with equivalent non-interactive diagnostics.
+
 ## Validation and unresolved gates
 
 `make lint`, `make test`, macOS scanner/output/config race tests, local `govulncheck`, and all

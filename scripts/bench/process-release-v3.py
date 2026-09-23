@@ -93,8 +93,10 @@ def run(binary, corpus, output_path):
         "--collect-xattrs=false", "--collect-acl=false", "--redact-sensitive", "mask",
     ]
     started = time.perf_counter()
+    env = os.environ.copy()
+    env["SAFNARI_DISABLE_PROGRESS"] = "1"
     with open(os.devnull, "wb") as sink:
-        child = subprocess.Popen(args, stdout=sink, stderr=sink)
+        child = subprocess.Popen(args, stdout=sink, stderr=sink, env=env)
         _, status, usage = os.wait4(child.pid, 0)
         child.returncode = os.waitstatus_to_exitcode(status)
     duration = time.perf_counter() - started

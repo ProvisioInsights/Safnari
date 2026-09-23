@@ -60,12 +60,12 @@ jobs:
           pattern='^BenchmarkScanFilesCorpora/(small_files|mixed_heavy_tail|sensitive_dense|duplicate_logs)/adaptive$'
           (
             cd baseline/src
-            GOEXPERIMENT=jsonv2 go test -tags jsonv2 -run '^$' -bench "$pattern" \
+            SAFNARI_DISABLE_PROGRESS=1 GOEXPERIMENT=jsonv2 go test -tags jsonv2 -run '^$' -bench "$pattern" \
               -benchmem -count=9 -timeout=90m ./scanner
           ) > evidence/baseline-bench.txt 2>&1
           (
             cd candidate/src
-            GOEXPERIMENT=jsonv2 go test -tags jsonv2 -run '^$' -bench "$pattern" \
+            SAFNARI_DISABLE_PROGRESS=1 GOEXPERIMENT=jsonv2 go test -tags jsonv2 -run '^$' -bench "$pattern" \
               -benchmem -count=9 -timeout=90m ./scanner
           ) > evidence/candidate-bench.txt 2>&1
         shell: bash
