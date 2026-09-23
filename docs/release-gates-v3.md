@@ -346,7 +346,13 @@ contains all benchmark samples, process CSVs, build context, and gate output.
 After RC1 was published, the default-branch dependency scan reported a high-severity alert for
 gRPC 1.83.1. The advisory concerns xDS servers, and Safnari's reachable-code scan found no
 affected call path, but RC2 updates to the patched gRPC 1.83.2. The scan-only performance and
-size gates must be rerun on the RC2 source before it replaces RC1 for the pilot.
+size gates were rerun on PR head `f3b7395` before RC2 could replace RC1 for the pilot. The
+[RC2 workflow evidence](https://github.com/ProvisioInsights/Safnari/actions/runs/35831532657)
+records a **2.473x** four-workload geometric-mean speedup. Process p95 ratios were 0.781x,
+0.449x, 0.662x, and 0.631x across 90 paired runs per workload; peak-RSS ratios were 0.850x,
+0.889x, 0.897x, and 0.887x. The macOS ARM64 stripped binary was 15,749,522 bytes and all
+other targets shrank by at least 38.2%. The full native, security, build, and SBOM PR matrix
+passed on that head.
 
 ## Validation and unresolved gates
 
