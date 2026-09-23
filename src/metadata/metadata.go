@@ -9,7 +9,6 @@ import (
 	"os"
 	"time"
 
-	"github.com/pdfcpu/pdfcpu/pkg/api"
 	"github.com/rwcarlsen/goexif/exif"
 )
 
@@ -42,15 +41,6 @@ func ExtractMetadataFromFile(f *os.File, size int64, mimeType string, path strin
 		}
 		meta := extractImageMetadataReader(reader)
 		maps.Copy(metadata, meta)
-	case "application/pdf":
-		if maxBytes > 0 && size > maxBytes {
-			return metadata
-		}
-		if _, err := f.Seek(0, io.SeekStart); err != nil {
-			return metadata
-		}
-		meta := extractPDFMetadataReaderFile(f, path)
-		maps.Copy(metadata, meta)
 	case "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
 		r, err := zip.NewReader(f, size)
 		if err != nil {
@@ -71,9 +61,6 @@ func ExtractMetadataFromBytes(content []byte, mimeType string, path string) map[
 	switch mimeType {
 	case "image/jpeg", "image/png":
 		meta := extractImageMetadataReader(bytes.NewReader(content))
-		maps.Copy(metadata, meta)
-	case "application/pdf":
-		meta := extractPDFMetadataReader(content, path)
 		maps.Copy(metadata, meta)
 	case "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
 		meta := extractDOCXMetadataReader(content)
@@ -115,50 +102,6 @@ func extractImageMetadataReader(reader io.Reader) map[string]interface{} {
 	}
 	if modelTag, err := x.Get(exif.Model); err == nil {
 		meta["model"] = modelTag.String()
-	}
-	return meta
-}
-
-// extractPDFMetadata reads standard PDF document information.
-func extractPDFMetadata(path string, maxBytes int64) map[string]interface{} {
-	if maxBytes > 0 {
-		info, err := os.Stat(path)
-		if err != nil || info.Size() > maxBytes {
-			return nil
-		}
-	}
-	f, err := os.Open(path)
-	if err != nil {
-		return nil
-	}
-	defer f.Close()
-
-	return extractPDFMetadataReaderFile(f, path)
-}
-
-func extractPDFMetadataReader(content []byte, path string) map[string]interface{} {
-	reader := bytes.NewReader(content)
-	return extractPDFMetadataReaderFile(reader, path)
-}
-
-func extractPDFMetadataReaderFile(reader io.ReadSeeker, path string) map[string]interface{} {
-	info, err := api.PDFInfo(reader, path, nil, false, nil)
-	if err != nil {
-		return nil
-	}
-
-	meta := make(map[string]interface{})
-	if info.Title != "" {
-		meta["title"] = info.Title
-	}
-	if info.Author != "" {
-		meta["author"] = info.Author
-	}
-	if info.Creator != "" {
-		meta["creator"] = info.Creator
-	}
-	if info.Producer != "" {
-		meta["producer"] = info.Producer
 	}
 	return meta
 }

@@ -1,0 +1,10 @@
+goos: darwin
+goarch: arm64
+pkg: safnari/scanner
+cpu: Apple M5 Max
+BenchmarkScanFilesCorpora/small_files/adaptive-18         	      20	  48534433 ns/op	59525061 B/op	  417374 allocs/op
+BenchmarkScanFilesCorpora/mixed_heavy_tail/adaptive-18    	      20	  51137927 ns/op	62046588 B/op	  517422 allocs/op
+BenchmarkScanFilesCorpora/sensitive_dense/adaptive-18     	      20	  12031444 ns/op	20749648 B/op	  112860 allocs/op
+BenchmarkScanFilesCorpora/duplicate_logs/adaptive-18      	      20	  16205229 ns/op	 7123391 B/op	   87511 allocs/op
+PASS
+ok  	safnari/scanner	3.713s

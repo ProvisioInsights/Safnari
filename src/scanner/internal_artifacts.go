@@ -1,6 +1,7 @@
 package scanner
 
 import (
+	"os"
 	"path/filepath"
 	"strings"
 	"unicode"
@@ -15,6 +16,7 @@ type internalArtifactFilter struct {
 	outputExt  string
 	diagDir    string
 	cacheDir   string
+	spoolDir   string
 }
 
 func newInternalArtifactFilter(cfg *config.Config) *internalArtifactFilter {
@@ -49,6 +51,13 @@ func newInternalArtifactFilter(cfg *config.Config) *internalArtifactFilter {
 
 	filter.diagDir = normalizeArtifactPath(cfg.DiagDir)
 	filter.cacheDir = normalizeArtifactPath(cfg.DeltaCacheDir)
+	spoolDir := cfg.SpoolDir
+	if spoolDir == "" {
+		if cache, err := os.UserCacheDir(); err == nil {
+			spoolDir = filepath.Join(cache, "safnari", "spool")
+		}
+	}
+	filter.spoolDir = normalizeArtifactPath(spoolDir)
 	return filter
 }
 
@@ -75,6 +84,9 @@ func (f *internalArtifactFilter) ShouldSkip(path string) bool {
 		return true
 	}
 	if f.cacheDir != "" && (absPath == f.cacheDir || strings.HasPrefix(absPath, f.cacheDir+string(filepath.Separator))) {
+		return true
+	}
+	if f.spoolDir != "" && (absPath == f.spoolDir || strings.HasPrefix(absPath, f.spoolDir+string(filepath.Separator))) {
 		return true
 	}
 	if f.matchesRotatedOutput(absPath) {

@@ -43,8 +43,12 @@ func TestResolveOtelEndpoint(t *testing.T) {
 
 	t.Setenv("OTEL_EXPORTER_OTLP_LOGS_ENDPOINT", "")
 	cfg = &config.Config{OtelFromEnv: true}
-	if got := resolveOtelEndpoint(cfg); got != "https://fallback.example.test" {
+	if got := resolveOtelEndpoint(cfg); got != "https://fallback.example.test/v1/logs" {
 		t.Fatalf("expected fallback env endpoint, got %q", got)
+	}
+	t.Setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "https://fallback.example.test/prefix/")
+	if got := resolveOtelEndpoint(cfg); got != "https://fallback.example.test/prefix/v1/logs" {
+		t.Fatalf("expected base path with logs suffix, got %q", got)
 	}
 
 	cfg = &config.Config{OtelFromEnv: false}

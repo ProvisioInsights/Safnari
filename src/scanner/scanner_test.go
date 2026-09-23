@@ -304,7 +304,6 @@ func TestCollectFileDataMarksContentTruncation(t *testing.T) {
 		ScanSensitive:       false,
 		SearchTerms:         []string{"alpha"},
 		ContentScanMaxBytes: 5,
-		ContentReadMode:     "stream",
 		StreamChunkSize:     4,
 	}
 	data, err := collectFileData(context.Background(), tmp.Name(), fi, cfg, nil, buildFileModules(cfg, nil), nil)
@@ -541,7 +540,9 @@ func TestShouldWriteFileData(t *testing.T) {
 
 func TestScanForSearchTerms(t *testing.T) {
 	content := "alpha beta alpha gamma"
-	hits := scanForSearchTerms(content, []string{"alpha", "delta", ""})
+	counter := newStreamAhoCounter(normalizeSearchTerms([]string{"alpha", "delta", ""}))
+	counter.Consume([]byte(content))
+	hits := counter.Results()
 	if hits["alpha"] != 2 {
 		t.Fatalf("expected 2 alpha hits, got %d", hits["alpha"])
 	}

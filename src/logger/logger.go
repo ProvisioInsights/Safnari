@@ -1,67 +1,37 @@
 package logger
 
 import (
+	"fmt"
+	"log/slog"
 	"os"
-
-	"github.com/sirupsen/logrus"
+	"strings"
 )
 
-var log *logrus.Logger
+var log *slog.Logger
 
 func Init(level string) {
-	log = logrus.New()
-	log.SetOutput(os.Stdout)
-
-	// Set log level
-	lvl, err := logrus.ParseLevel(level)
-	if err != nil {
-		log.Warnf("Invalid log level '%s', defaulting to 'info'", level)
-		lvl = logrus.InfoLevel
+	var min slog.Level
+	switch strings.ToLower(strings.TrimSpace(level)) {
+	case "debug":
+		min = slog.LevelDebug
+	case "warn", "warning":
+		min = slog.LevelWarn
+	case "error":
+		min = slog.LevelError
+	default:
+		min = slog.LevelInfo
 	}
-	log.SetLevel(lvl)
-
-	// Set formatter
-	log.SetFormatter(&logrus.TextFormatter{
-		FullTimestamp: true,
-	})
+	log = slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: min}))
+	if level != "" && level != "info" && min == slog.LevelInfo {
+		log.Warn("invalid log level; using info", "level", level)
+	}
 }
 
-func Debug(args ...interface{}) {
-	log.Debug(args...)
-}
-
-func Info(args ...interface{}) {
-	log.Info(args...)
-}
-
-func Warn(args ...interface{}) {
-	log.Warn(args...)
-}
-
-func Error(args ...interface{}) {
-	log.Error(args...)
-}
-
-func Fatal(args ...interface{}) {
-	log.Fatal(args...)
-}
-
-func Debugf(format string, args ...interface{}) {
-	log.Debugf(format, args...)
-}
-
-func Infof(format string, args ...interface{}) {
-	log.Infof(format, args...)
-}
-
-func Warnf(format string, args ...interface{}) {
-	log.Warnf(format, args...)
-}
-
-func Errorf(format string, args ...interface{}) {
-	log.Errorf(format, args...)
-}
-
-func Fatalf(format string, args ...interface{}) {
-	log.Fatalf(format, args...)
-}
+func Debug(args ...interface{})                 { log.Debug(fmt.Sprint(args...)) }
+func Info(args ...interface{})                  { log.Info(fmt.Sprint(args...)) }
+func Warn(args ...interface{})                  { log.Warn(fmt.Sprint(args...)) }
+func Error(args ...interface{})                 { log.Error(fmt.Sprint(args...)) }
+func Debugf(format string, args ...interface{}) { log.Debug(fmt.Sprintf(format, args...)) }
+func Infof(format string, args ...interface{})  { log.Info(fmt.Sprintf(format, args...)) }
+func Warnf(format string, args ...interface{})  { log.Warn(fmt.Sprintf(format, args...)) }
+func Errorf(format string, args ...interface{}) { log.Error(fmt.Sprintf(format, args...)) }

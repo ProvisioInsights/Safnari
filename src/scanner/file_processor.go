@@ -38,6 +38,22 @@ func processFile(
 	deltaCache *DeltaChunkCache,
 	enforcePathWithin bool,
 ) error {
+	return processFileWithRootCache(ctx, path, fileInfo, cfg, w, sensitivePatterns, modules, deltaCache, enforcePathWithin, nil, "")
+}
+
+func processFileWithRootCache(
+	ctx context.Context,
+	path string,
+	fileInfo os.FileInfo,
+	cfg *config.Config,
+	w *output.Writer,
+	sensitivePatterns map[string]*regexp.Regexp,
+	modules []FileModule,
+	deltaCache *DeltaChunkCache,
+	enforcePathWithin bool,
+	rootCache *directoryRootCache,
+	relativePath string,
+) error {
 	ctx, endTask := tracing.StartTask(ctx, "process_file")
 	tracing.Log(ctx, "file", path)
 	defer endTask()
@@ -72,15 +88,18 @@ func processFile(
 	w.IncrementScanned()
 
 	endRegion := tracing.StartRegion(ctx, "collect_file_data")
-	fileData, err := collectFileData(ctx, path, fileInfo, cfg, sensitivePatterns, modules, deltaCache)
+	fileData, err := collectFileDataWithRootCache(ctx, path, fileInfo, cfg, sensitivePatterns, modules, deltaCache, rootCache, relativePath)
 	endRegion()
 	if err != nil {
 		if errors.Is(err, context.Canceled) {
 			return err
 		}
 		logger.Warnf("Failed to process file %s: %v", path, err)
+		w.RecordFileError()
 		return nil
 	}
+	w.RecordCoverage(fileData.ContentScanBytes, fileData.ContentScanTruncated,
+		fileData.SensitiveDataTruncated, len(fileData.CollectionWarnings) > 0)
 	if shouldWriteFileData(cfg, fileData) {
 		if err := w.WriteData(fileData); err != nil {
 			return fmt.Errorf("write file record %s: %w", path, err)
@@ -98,6 +117,20 @@ func collectFileData(
 	modules []FileModule,
 	deltaCache *DeltaChunkCache,
 ) (*FileRecord, error) {
+	return collectFileDataWithRootCache(ctx, path, fileInfo, cfg, sensitivePatterns, modules, deltaCache, nil, "")
+}
+
+func collectFileDataWithRootCache(
+	ctx context.Context,
+	path string,
+	fileInfo os.FileInfo,
+	cfg *config.Config,
+	sensitivePatterns map[string]*regexp.Regexp,
+	modules []FileModule,
+	deltaCache *DeltaChunkCache,
+	rootCache *directoryRootCache,
+	relativePath string,
+) (*FileRecord, error) {
 	data := &FileRecord{Path: path}
 
 	fc := FileContext{
@@ -106,10 +139,17 @@ func collectFileData(
 		Cfg:               cfg,
 		SensitivePatterns: sensitivePatterns,
 		deltaCache:        deltaCache,
+		rootCache:         rootCache,
+		rootRelativePath:  relativePath,
 	}
 	defer func() {
 		_ = fc.Close()
 	}()
+	if rootCache != nil {
+		if _, err := fc.Source(); err != nil {
+			return nil, err
+		}
+	}
 	if len(modules) == 0 {
 		modules = buildFileModules(cfg, sensitivePatterns)
 	}
@@ -244,7 +284,7 @@ func hasLikelyTextExtension(path string) bool {
 }
 
 func looksLikeText(sample []byte) bool {
-	return looksLikeTextFast(sample)
+	return looksLikeTextGeneric(sample)
 }
 
 func luhnValid(number string) bool {
@@ -587,15 +627,6 @@ func redactValue(value, mode string) string {
 	default:
 		return value
 	}
-}
-
-func scanForSearchTerms(content string, terms []string) map[string]int {
-	counter := prefilter.BuildSearchCounter(terms)
-	return counter.CountBytes([]byte(content))
-}
-
-func readFileContent(path string, maxSize int64) ([]byte, error) {
-	return readFileContentStandard(path, maxSize)
 }
 
 // getFileOwnership function is implemented in platform-specific files:

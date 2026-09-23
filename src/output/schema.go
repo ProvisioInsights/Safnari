@@ -1,3 +1,3 @@
 package output
 
-const SchemaVersion = "2"
+const SchemaVersion = "3"

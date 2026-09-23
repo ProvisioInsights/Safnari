@@ -1,0 +1,80 @@
+{
+  "baseline_source_sha": "956d509702b48fa967ae0e339ce16f648cf470d2",
+  "candidate_base_sha": "956d509702b48fa967ae0e339ce16f648cf470d2",
+  "candidate_uncommitted_src_sha256": "1dbb949757252145035041844613fddd966c6a0e21b4fa04b44cc607f990d5f0",
+  "source_digest_method": "sorted src files excluding src/pgo; hash path, NUL, then SHA-256 of content",
+  "go_version": "go version go1.26.3 darwin/arm64",
+  "platform": "macOS-27.0-arm64-arm-64bit-Mach-O",
+  "build_flags": [
+    "GOEXPERIMENT=jsonv2",
+    "-tags jsonv2",
+    "-trimpath",
+    "-ldflags=-s -w"
+  ],
+  "benchmark_source": "artifacts/bench/directory-cache-final-verified-bench.txt",
+  "benchmark_nine_samples_per_workload": {
+    "small_files": 9,
+    "mixed_heavy_tail": 9,
+    "sensitive_dense": 9,
+    "duplicate_logs": 9
+  },
+  "benchmark_median_speedup_vs_frozen": {
+    "small_files": 1.5233346654862134,
+    "mixed_heavy_tail": 1.7896425929368671,
+    "sensitive_dense": 1.2695869862860578,
+    "duplicate_logs": 2.1283929665800114
+  },
+  "benchmark_geomean_speedup_vs_frozen": 1.6474755477522867,
+  "process_evidence": "artifacts/bench/directory-cache-final-verified-process-20260922",
+  "process_corpus_sha256": "0a5aa19ea48459a9339f000f5af10bc3bce91eb5d460e95a715e549dd91d2eb2",
+  "process_ratios_vs_preceding_candidate": {
+    "small_files": {
+      "runs": 30,
+      "p95_ratio": 0.9921904144981316,
+      "peak_rss_ratio": 1.0177232447171098
+    },
+    "mixed_heavy_tail": {
+      "runs": 30,
+      "p95_ratio": 0.9636822746925677,
+      "peak_rss_ratio": 0.9774236387782205
+    },
+    "sensitive_dense": {
+      "runs": 30,
+      "p95_ratio": 1.0601119765171685,
+      "peak_rss_ratio": 0.9930458970792768
+    },
+    "duplicate_logs": {
+      "runs": 30,
+      "p95_ratio": 0.9271762371113775,
+      "peak_rss_ratio": 0.9906354515050168
+    }
+  },
+  "stripped_sizes": {
+    "safnari-darwin-amd64": {
+      "bytes": 16624576,
+      "sha256": "cbf791f8604ace827c9755c1e72d1d95cbd009c1299f99dcc2447d925e4e1934",
+      "shrink_percent": 39.018806089456724
+    },
+    "safnari-darwin-arm64": {
+      "bytes": 15581890,
+      "sha256": "a4a3dedc697ec975c07629ab89e03069ce0f770e9952e5f336e351317c49aa65",
+      "shrink_percent": 40.15642243027783
+    },
+    "safnari-linux-amd64": {
+      "bytes": 16150690,
+      "sha256": "4f253f9b69b6b34f127e8c9338cef254d2b74e391244b7854a36a865a8dcc46f",
+      "shrink_percent": 39.54284514712996
+    },
+    "safnari-linux-arm64": {
+      "bytes": 15007906,
+      "sha256": "bca3783d6c50afb81309a69b30908d0a94531e9533abf1df9e9eb0158028e18d",
+      "shrink_percent": 40.82661260910457
+    },
+    "safnari-windows-amd64.exe": {
+      "bytes": 16690176,
+      "sha256": "9365842485bd11042b37b131634a705fa502f003997cdba9285e2474547029a5",
+      "shrink_percent": 38.88180590970451
+    }
+  },
+  "cache_state": "warm-cache; cold cache not controlled"
+}

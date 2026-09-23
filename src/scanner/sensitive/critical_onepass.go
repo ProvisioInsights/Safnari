@@ -93,7 +93,7 @@ func ScanDeterministicVisit(
 			}
 		}
 
-		if enabled.apiKey && (!useWant || want("api_key")) && isASCIILetter(ch) {
+		if enabled.apiKey && (!useWant || want("api_key")) && lowerASCII(ch) == 'a' {
 			if end, ok := matchAPIKeyAt(content, i); ok {
 				if !emit("api_key", i, end) {
 					return
@@ -386,10 +386,6 @@ func lowerASCII(ch byte) byte {
 		return ch + ('a' - 'A')
 	}
 	return ch
-}
-
-func isASCIILetter(ch byte) bool {
-	return (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z')
 }
 
 func isSpaceTab(ch byte) bool {

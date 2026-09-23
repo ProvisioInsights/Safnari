@@ -10,6 +10,7 @@ This directory contains extended documentation for Safnari.
 - [Configuration](#configuration)
 - [Examples](#examples)
 - [Performance Guide](#performance-guide)
+- [Changelog](CHANGELOG.md)
 
 ## Overview
 
@@ -35,6 +36,8 @@ make build
 
 The resulting binary is placed in the `bin` directory. Safnari enables the experimental JSON v2
 encoder by default for better throughput.
+For the five stripped release binaries and matching diagnostic builds, run
+`make build-release-all VERSION=<tag>`.
 
 To include runtime tracing, pass the `trace` build tag:
 
@@ -48,11 +51,10 @@ For low-overhead tracing in any build, enable the in-memory flight recorder with
 at exit or on interrupt. Use `--trace-flight-max-bytes` and `--trace-flight-min-age`
 to tune the capture window.
 
-To embed a version string during compilation, use an `-ldflags` parameter:
+Release builds embed the supplied version tag:
 
 ```sh
-cd src
-go build -ldflags "-X safnari/version.Version=v1.0.2" -o ../bin/safnari ./cmd
+make build-release VERSION=safnari-20260923a
 ```
 
 ## Development
@@ -83,10 +85,9 @@ before/after `benchstat` comparison for performance-focused changes. Supplying
 both `BASELINE` and `CANDIDATE` to `make bench-gate` enables artifact-compare
 mode for threshold enforcement against a known baseline.
 
-In CI, pull requests run the lighter `benchmark-pr` job, which still executes
-`make bench-gate` but treats the result as informational and uploads the
-artifact directory plus summary output for review. Non-PR runs keep the stricter
-benchmark enforcement path in `benchmark-matrix`.
+In CI, pull requests and pushes upload benchmark artifacts. The historical ultra gate is
+informational for schema v3. Use [release-gates-v3.md](release-gates-v3.md) for the accepted
+numeric target and the remaining release requirements.
 
 Run periodic escape-analysis snapshots when tuning allocations:
 
@@ -122,14 +123,16 @@ Safnari accepts the following flags. Each description lists the default value in
 - `--concurrency`: Concurrency level (default: number of logical CPUs; effective value is adjusted
   by `--nice` unless `--concurrency` is set).
 - `--nice`: Nice level: high, medium, or low (default: `medium`).
-- `--hashes`: Comma-separated list of hash algorithms (default: `md5,sha1,sha256`).
+- `--hashes`: Comma-separated list of hash algorithms (default: `sha256`).
 - `--search`: Comma-separated list of search terms (default: none).
 - `--redact-sensitive`: Redact sensitive matches in output: mask or hash
   (default: `mask`). Use `none` to disable.
 - `--include`: Comma-separated list of include patterns (default: none).
 - `--exclude`: Comma-separated list of exclude patterns (default: none).
-- `--max-file-size`: Maximum file size for full-file operations such as hashing and deep metadata extraction in bytes (default: `10485760`).
-- `--content-scan-max-bytes`: Maximum bytes to inspect for search and sensitive scans (default: `10485760`; `0` means unlimited only when sensitive scanning is disabled).
+- `--max-file-size`: Maximum file size for full-file operations such as hashing and deep metadata
+  extraction in bytes (default: `10485760`).
+- `--content-scan-max-bytes`: Maximum bytes to inspect for search and sensitive scans
+  (default: `10485760`; `0` means unlimited only when sensitive scanning is disabled).
 - `--max-output-file-size`: Maximum output file size before rotation in bytes
   (default: `104857600`).
 - `--log-level`: Log level: debug, info, warn, error, fatal, or panic (default: `info`).
@@ -184,15 +187,9 @@ Safnari accepts the following flags. Each description lists the default value in
 - `--sensitive-longtail`: Long-tail sensitive behavior: `off`, `sampled`, or `full`
   (default: `sampled`).
 - `--sensitive-window-bytes`: Window size used by sampled long-tail mode (default: `4096`).
-- `--content-read-mode`: File content reader mode: `auto`, `stream`, or `mmap`
-  (default: `auto`).
 - `--stream-chunk-size`: Streaming chunk size in bytes (default: `262144`).
 - `--stream-overlap-bytes`: Streaming overlap bytes between chunks (default: `512`).
-- `--mmap-min-size`: Minimum file size in bytes before mmap is considered in `auto` mode
-  (default: `131072`).
 - `--json-layout`: JSON layout. `ndjson` is the only supported value (default: `ndjson`).
-- `--simd-fastpath`: Enable SIMD-gated text/token fast paths when available in the binary
-  (default: `false`).
 - `--diag-slow-scan-threshold`: Emit diagnostics artifacts when progress stalls past this duration
   (default: `0`, disabled).
 - `--diag-dir`: Directory used for diagnostics artifacts (default: current directory).
@@ -201,6 +198,9 @@ Safnari accepts the following flags. Each description lists the default value in
 - `--otel-headers`: Comma-separated OTEL headers (default: none).
 - `--otel-service-name`: OTEL service name (default: `safnari`).
 - `--otel-timeout`: OTEL export timeout (default: `5s`).
+- `--spool-dir`: Private OTEL spool directory (default: user cache `safnari/spool`).
+- `--device-id`: Externally provisioned correlation ID (default: generated installation ID).
+- `--replay-only`: Drain committed OTEL batches without scanning (default: `false`).
 - `--trace-flight`: Enable flight recorder tracing (default: `false`).
 - `--trace-flight-file`: Flight recorder output file (default: `trace-flight.out`).
 - `--trace-flight-max-bytes`: Max bytes for flight recorder buffer (default: `0`).
@@ -215,8 +215,9 @@ Use `--sensitive-match-mode first` when you only need per-file presence signals.
 Safnari retains the first match per type, marks `sensitive_data_truncated`, and
 adds a collection warning so the reduced capture mode is explicit.
 
-Safnari writes NDJSON only. Each line is a schema v2 record with `record_type`,
-`schema_version`, and `payload`.
+Safnari writes schema v3 NDJSON. Each record includes `record_type`, `schema_version`,
+`device_id`, `scan_id`, `sequence`, `event_id`, `observed_at`, `scanner_version`,
+`policy_digest`, and `payload`. See [migration-v3.md](migration-v3.md).
 
 When content inspection is capped by `--content-scan-max-bytes`, file records include
 `content_scan_bytes`, `content_scan_truncated`, and `collection_warnings` so partial
@@ -234,10 +235,10 @@ See `./bin/safnari --help` for detailed usage information.
 
 ## OTEL Export
 
-When `--otel-endpoint` is set (or OTEL environment variables are present),
-Safnari exports records over OTLP/HTTP Logs. The exported log body contains the
-same fields as the local JSON records, and each log includes `record_type` and
-`schema_version` attributes for reconstruction.
+When `--otel-endpoint` is set (or OTEL environment variables are enabled), Safnari commits
+sanitized batches to a private disk spool and exports them over OTLP/HTTP Logs. Pending batches
+can be drained with `--replay-only`. Receiver acceptance is the acknowledgment boundary;
+downstream consumers should deduplicate `event_id`.
 
 ## CI And Release Security
 
@@ -249,9 +250,8 @@ GitHub Actions now runs multiple repo-level checks:
   misconfigurations.
 - CodeQL analysis for workflow and Go code scanning.
 
-Push and release workflows also generate SPDX SBOMs with Syft for both the
-source tree and compiled binaries. Those SBOM artifacts are uploaded in CI and
-published with generated releases.
+The push workflow generates SPDX SBOMs with Syft for the source tree and compiled binaries.
+CI uploads those SBOMs as workflow artifacts alongside release and diagnostic builds.
 
 ## Capability Matrix
 
@@ -263,7 +263,7 @@ be disabled with the listed flags.
 | Baseline file inventory | Yes | Yes | Yes | `--scan-files` | User |
 | Cryptographic hashes (MD5/SHA1/SHA256) | Yes | Yes | Yes | `--hashes` | User |
 | Fuzzy hashing (TLSH) | Yes | Yes | Yes | `--fuzzy-hash`, `--fuzzy-algorithms` | User |
-| File metadata (EXIF/PDF) | Yes | Yes | Yes | `--scan-files` | User |
+| File metadata (EXIF/DOCX) | Yes | Yes | Yes | `--scan-files` | User |
 | File times (create/access/change) | Yes | Yes | Yes | `--scan-files` | User |
 | File ID (inode/volume+file index) | Yes | Yes | Yes | `--scan-files` | User |
 | Xattrs | Yes | Yes | No | `--collect-xattrs`, `--xattr-max-value-size` | User |

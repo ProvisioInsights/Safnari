@@ -28,7 +28,7 @@ func TestCountSearchTermsStreamParity(t *testing.T) {
 	if err != nil {
 		t.Fatalf("stream count: %v", err)
 	}
-	want := scanForSearchTerms(content, terms)
+	want := map[string]int{"alpha": 2, "aaaa": 1, "END": 2}
 	if len(streamHits) != len(want) {
 		t.Fatalf("hit map length mismatch: got=%v want=%v", streamHits, want)
 	}
@@ -58,20 +58,5 @@ func TestCountSearchTermsStreamHonorsMaxSize(t *testing.T) {
 	}
 	if hits != nil {
 		t.Fatalf("expected nil hits when max size is exceeded, got %v", hits)
-	}
-}
-
-func TestShouldUseStreamSearchCounter(t *testing.T) {
-	if shouldUseStreamSearchCounter("stream", false, 2) != true {
-		t.Fatal("expected stream counter to be enabled")
-	}
-	if shouldUseStreamSearchCounter("auto", false, 2) {
-		t.Fatal("expected stream counter disabled for auto mode")
-	}
-	if shouldUseStreamSearchCounter("stream", true, 2) {
-		t.Fatal("expected stream counter disabled when content cache exists")
-	}
-	if shouldUseStreamSearchCounter("stream", false, 0) {
-		t.Fatal("expected stream counter disabled with zero terms")
 	}
 }

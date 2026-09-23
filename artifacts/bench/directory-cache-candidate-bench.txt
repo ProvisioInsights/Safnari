@@ -1,0 +1,42 @@
+goos: darwin
+goarch: arm64
+pkg: safnari/scanner
+cpu: Apple M5 Max
+BenchmarkScanFilesCorpora/small_files/adaptive-18         	      34	  33458746 ns/op	41899222 B/op	  282520 allocs/op
+BenchmarkScanFilesCorpora/small_files/adaptive-18         	      34	  34854849 ns/op	42373504 B/op	  282537 allocs/op
+BenchmarkScanFilesCorpora/small_files/adaptive-18         	      33	  33368211 ns/op	40981103 B/op	  282472 allocs/op
+BenchmarkScanFilesCorpora/small_files/adaptive-18         	      34	  33542630 ns/op	41207615 B/op	  282502 allocs/op
+BenchmarkScanFilesCorpora/small_files/adaptive-18         	      34	  33496615 ns/op	41095575 B/op	  282458 allocs/op
+BenchmarkScanFilesCorpora/small_files/adaptive-18         	      34	  33294292 ns/op	41047063 B/op	  282441 allocs/op
+BenchmarkScanFilesCorpora/small_files/adaptive-18         	      34	  33416995 ns/op	41164356 B/op	  282485 allocs/op
+BenchmarkScanFilesCorpora/small_files/adaptive-18         	      33	  33818235 ns/op	41329563 B/op	  282447 allocs/op
+BenchmarkScanFilesCorpora/small_files/adaptive-18         	      34	  34133771 ns/op	41528341 B/op	  282467 allocs/op
+BenchmarkScanFilesCorpora/mixed_heavy_tail/adaptive-18    	      28	  35781498 ns/op	46248089 B/op	  382324 allocs/op
+BenchmarkScanFilesCorpora/mixed_heavy_tail/adaptive-18    	      32	  36072617 ns/op	45651481 B/op	  382341 allocs/op
+BenchmarkScanFilesCorpora/mixed_heavy_tail/adaptive-18    	      32	  35609466 ns/op	45630842 B/op	  382371 allocs/op
+BenchmarkScanFilesCorpora/mixed_heavy_tail/adaptive-18    	      32	  35665611 ns/op	45902493 B/op	  382265 allocs/op
+BenchmarkScanFilesCorpora/mixed_heavy_tail/adaptive-18    	      31	  36129108 ns/op	45554533 B/op	  382294 allocs/op
+BenchmarkScanFilesCorpora/mixed_heavy_tail/adaptive-18    	      32	  35824469 ns/op	46376772 B/op	  382327 allocs/op
+BenchmarkScanFilesCorpora/mixed_heavy_tail/adaptive-18    	      32	  36273005 ns/op	45677257 B/op	  382370 allocs/op
+BenchmarkScanFilesCorpora/mixed_heavy_tail/adaptive-18    	      31	  36389875 ns/op	46999704 B/op	  382353 allocs/op
+BenchmarkScanFilesCorpora/mixed_heavy_tail/adaptive-18    	      32	  36685806 ns/op	45178279 B/op	  382310 allocs/op
+BenchmarkScanFilesCorpora/sensitive_dense/adaptive-18     	      97	  12291175 ns/op	22122417 B/op	  104722 allocs/op
+BenchmarkScanFilesCorpora/sensitive_dense/adaptive-18     	      92	  12077547 ns/op	22209817 B/op	  104723 allocs/op
+BenchmarkScanFilesCorpora/sensitive_dense/adaptive-18     	      87	  12026209 ns/op	22079645 B/op	  104718 allocs/op
+BenchmarkScanFilesCorpora/sensitive_dense/adaptive-18     	      97	  12701704 ns/op	21943099 B/op	  104731 allocs/op
+BenchmarkScanFilesCorpora/sensitive_dense/adaptive-18     	      85	  12932493 ns/op	21785051 B/op	  104680 allocs/op
+BenchmarkScanFilesCorpora/sensitive_dense/adaptive-18     	      90	  12755961 ns/op	22098199 B/op	  104726 allocs/op
+BenchmarkScanFilesCorpora/sensitive_dense/adaptive-18     	      98	  12359882 ns/op	21847683 B/op	  104700 allocs/op
+BenchmarkScanFilesCorpora/sensitive_dense/adaptive-18     	      91	  12204169 ns/op	22017837 B/op	  104715 allocs/op
+BenchmarkScanFilesCorpora/sensitive_dense/adaptive-18     	      86	  12139045 ns/op	21883108 B/op	  104706 allocs/op
+BenchmarkScanFilesCorpora/duplicate_logs/adaptive-18      	      74	  15785105 ns/op	 7041744 B/op	   87061 allocs/op
+BenchmarkScanFilesCorpora/duplicate_logs/adaptive-18      	      72	  15793717 ns/op	 6942370 B/op	   87047 allocs/op
+BenchmarkScanFilesCorpora/duplicate_logs/adaptive-18      	      72	  16114941 ns/op	 6844542 B/op	   87055 allocs/op
+BenchmarkScanFilesCorpora/duplicate_logs/adaptive-18      	      69	  17667247 ns/op	 7092601 B/op	   87066 allocs/op
+BenchmarkScanFilesCorpora/duplicate_logs/adaptive-18      	      61	  21375186 ns/op	 6872796 B/op	   87051 allocs/op
+BenchmarkScanFilesCorpora/duplicate_logs/adaptive-18      	      62	  16356921 ns/op	 7101653 B/op	   87058 allocs/op
+BenchmarkScanFilesCorpora/duplicate_logs/adaptive-18      	      66	  16182626 ns/op	 6891423 B/op	   87048 allocs/op
+BenchmarkScanFilesCorpora/duplicate_logs/adaptive-18      	      66	  15846099 ns/op	 6882734 B/op	   87047 allocs/op
+BenchmarkScanFilesCorpora/duplicate_logs/adaptive-18      	      66	  16473807 ns/op	 6901665 B/op	   87057 allocs/op
+PASS
+ok  	safnari/scanner	59.964s

@@ -1,0 +1,26 @@
+goos: darwin
+goarch: arm64
+pkg: safnari/scanner
+cpu: Apple M5 Max
+BenchmarkStreamSearchAlgorithms/repeated_log/automaton-18         	    3344	    370417 ns/op	   15872 B/op	      36 allocs/op
+BenchmarkStreamSearchAlgorithms/repeated_log/automaton-18         	    3176	    359770 ns/op	   15872 B/op	      36 allocs/op
+BenchmarkStreamSearchAlgorithms/repeated_log/automaton-18         	    3408	    354102 ns/op	   15872 B/op	      36 allocs/op
+BenchmarkStreamSearchAlgorithms/repeated_log/automaton-18         	    3546	    354941 ns/op	   15872 B/op	      36 allocs/op
+BenchmarkStreamSearchAlgorithms/repeated_log/automaton-18         	    3391	    353818 ns/op	   15872 B/op	      36 allocs/op
+BenchmarkStreamSearchAlgorithms/repeated_log/byte_search-18       	    3013	    394156 ns/op	   15976 B/op	      39 allocs/op
+BenchmarkStreamSearchAlgorithms/repeated_log/byte_search-18       	    3126	    392359 ns/op	   15976 B/op	      39 allocs/op
+BenchmarkStreamSearchAlgorithms/repeated_log/byte_search-18       	    3115	    400930 ns/op	   15976 B/op	      39 allocs/op
+BenchmarkStreamSearchAlgorithms/repeated_log/byte_search-18       	    2932	    400585 ns/op	   15976 B/op	      39 allocs/op
+BenchmarkStreamSearchAlgorithms/repeated_log/byte_search-18       	    2949	    422223 ns/op	   15976 B/op	      39 allocs/op
+BenchmarkStreamSearchAlgorithms/repeated_prefix/automaton-18      	    5114	    244280 ns/op	   13616 B/op	      34 allocs/op
+BenchmarkStreamSearchAlgorithms/repeated_prefix/automaton-18      	    4998	    236097 ns/op	   13616 B/op	      34 allocs/op
+BenchmarkStreamSearchAlgorithms/repeated_prefix/automaton-18      	    5156	    236335 ns/op	   13616 B/op	      34 allocs/op
+BenchmarkStreamSearchAlgorithms/repeated_prefix/automaton-18      	    5128	    237329 ns/op	   13616 B/op	      34 allocs/op
+BenchmarkStreamSearchAlgorithms/repeated_prefix/automaton-18      	    5064	    236410 ns/op	   13616 B/op	      34 allocs/op
+BenchmarkStreamSearchAlgorithms/repeated_prefix/byte_search-18    	   15974	     71744 ns/op	   13720 B/op	      37 allocs/op
+BenchmarkStreamSearchAlgorithms/repeated_prefix/byte_search-18    	   17097	     70170 ns/op	   13720 B/op	      37 allocs/op
+BenchmarkStreamSearchAlgorithms/repeated_prefix/byte_search-18    	   17157	     70616 ns/op	   13720 B/op	      37 allocs/op
+BenchmarkStreamSearchAlgorithms/repeated_prefix/byte_search-18    	   17187	     70212 ns/op	   13720 B/op	      37 allocs/op
+BenchmarkStreamSearchAlgorithms/repeated_prefix/byte_search-18    	   17212	     70194 ns/op	   13720 B/op	      37 allocs/op
+PASS
+ok  	safnari/scanner	29.476s

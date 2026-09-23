@@ -2,6 +2,8 @@ package output
 
 import (
 	"bufio"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"os"
@@ -12,8 +14,8 @@ import (
 	"time"
 
 	"safnari/config"
-	"safnari/logger"
 	"safnari/systeminfo"
+	"safnari/version"
 )
 
 type Metrics struct {
@@ -26,9 +28,16 @@ type Metrics struct {
 }
 
 type ndjsonRecord struct {
-	RecordType    string `json:"record_type"`
-	SchemaVersion string `json:"schema_version"`
-	Payload       any    `json:"payload,omitempty"`
+	RecordType     string `json:"record_type"`
+	SchemaVersion  string `json:"schema_version"`
+	DeviceID       string `json:"device_id"`
+	ScanID         string `json:"scan_id"`
+	Sequence       uint64 `json:"sequence"`
+	EventID        string `json:"event_id"`
+	ObservedAt     string `json:"observed_at"`
+	ScannerVersion string `json:"scanner_version"`
+	PolicyDigest   string `json:"policy_digest"`
+	Payload        any    `json:"payload,omitempty"`
 }
 
 type writeRequest struct {
@@ -37,18 +46,25 @@ type writeRequest struct {
 }
 
 type Writer struct {
-	file     *os.File
-	buf      *bufio.Writer
-	mu       sync.Mutex
-	closed   bool
-	writeErr error
-	metrics  *Metrics
-	cfg      *config.Config
-	sysInfo  *systeminfo.SystemInfo
-	otel     *otelLogger
-	base     string
-	ext      string
-	index    int
+	file           *os.File
+	buf            *bufio.Writer
+	mu             sync.Mutex
+	closed         bool
+	writeErr       error
+	metrics        *Metrics
+	cfg            *config.Config
+	sysInfo        *systeminfo.SystemInfo
+	otel           *otelLogger
+	spool          *durableSpool
+	base           string
+	ext            string
+	index          int
+	deviceID       string
+	scanID         string
+	policyDigest   string
+	sequence       uint64
+	completion     string
+	completionCode string
 
 	queue     chan writeRequest
 	stopSends chan struct{}
@@ -56,11 +72,16 @@ type Writer struct {
 	writerWG  sync.WaitGroup
 	enqueueWG sync.WaitGroup
 
-	bytesWritten     int64
-	recordsSinceSync int
-	lastSyncAt       time.Time
-	filesScanned     atomic.Int64
-	filesProcessed   atomic.Int64
+	bytesWritten       int64
+	recordsSinceSync   int
+	lastSyncAt         time.Time
+	filesScanned       atomic.Int64
+	filesProcessed     atomic.Int64
+	contentBytes       atomic.Int64
+	contentTruncated   atomic.Int64
+	sensitiveTruncated atomic.Int64
+	filesWithWarnings  atomic.Int64
+	fileErrors         atomic.Int64
 }
 
 const (
@@ -95,18 +116,55 @@ func New(cfg *config.Config, sysInfo *systeminfo.SystemInfo, m *Metrics) (*Write
 		base:    base,
 		ext:     ext,
 	}
+	var err error
+	if cfg.DeviceID != "" {
+		w.deviceID = cfg.DeviceID
+	} else {
+		w.deviceID, err = loadInstallationID(cfg)
+		if err != nil {
+			return nil, err
+		}
+	}
+	w.scanID, err = randomID()
+	if err != nil {
+		return nil, err
+	}
+	w.policyDigest = effectivePolicyDigest(cfg)
 	otel, err := newOtelLogger(cfg)
 	if err != nil {
-		logger.Warnf("OTEL export disabled: %v", err)
-	} else {
-		w.otel = otel
+		return nil, err
+	}
+	w.otel = otel
+	w.spool, err = openDurableSpool(cfg, otel)
+	if err != nil {
+		otel.Shutdown()
+		return nil, err
 	}
 
 	if err := w.openFile(); err != nil {
+		_ = w.spool.close()
+		return nil, err
+	}
+	if err := w.writeRecord("scan_start", map[string]interface{}{
+		"status": "running", "scan_files": cfg.ScanFiles,
+		"scan_sensitive": cfg.ScanSensitive, "scan_processes": cfg.ScanProcesses,
+		"collect_system_info":    cfg.CollectSystemInfo,
+		"hash_algorithms":        cfg.HashAlgorithms,
+		"max_file_size":          cfg.MaxFileSize,
+		"content_scan_max_bytes": cfg.ContentScanMaxBytes,
+		"sensitive_engine":       cfg.SensitiveEngine,
+		"sensitive_longtail":     cfg.SensitiveLongtail,
+		"sensitive_match_mode":   cfg.SensitiveMatchMode,
+		"custom_pattern_count":   len(cfg.CustomPatterns),
+		"search_term_count":      len(cfg.SearchTerms),
+	}); err != nil {
+		_ = w.closeFile()
+		_ = w.spool.close()
 		return nil, err
 	}
 	if err := w.emitInitialRecords(); err != nil {
 		_ = w.closeFile()
+		_ = w.spool.close()
 		return nil, err
 	}
 	w.startAsyncWriter()
@@ -136,10 +194,19 @@ func (w *Writer) openFile() error {
 }
 
 func (w *Writer) writeRecord(recordType string, payload any) error {
+	w.sequence++
+	eventID := sha256.Sum256([]byte(fmt.Sprintf("%s\x00%s\x00%d", w.deviceID, w.scanID, w.sequence)))
 	record := ndjsonRecord{
-		RecordType:    recordType,
-		SchemaVersion: SchemaVersion,
-		Payload:       payload,
+		RecordType:     recordType,
+		SchemaVersion:  SchemaVersion,
+		DeviceID:       w.deviceID,
+		ScanID:         w.scanID,
+		Sequence:       w.sequence,
+		EventID:        hex.EncodeToString(eventID[:]),
+		ObservedAt:     time.Now().UTC().Format(time.RFC3339Nano),
+		ScannerVersion: version.Version,
+		PolicyDigest:   w.policyDigest,
+		Payload:        payload,
 	}
 	data, err := jsonMarshal(record)
 	if err != nil {
@@ -152,7 +219,10 @@ func (w *Writer) writeRecord(recordType string, payload any) error {
 	}
 	n, err = w.buf.WriteString("\n")
 	w.bytesWritten += int64(n)
-	return err
+	if err != nil {
+		return err
+	}
+	return w.spool.enqueueRecord(record)
 }
 
 func (w *Writer) WriteData(data any) error {
@@ -228,8 +298,37 @@ func (w *Writer) SetMetrics(m Metrics) {
 	w.metrics = &m
 }
 
+func (w *Writer) SetCompletion(status string) {
+	w.mu.Lock()
+	w.completion = status
+	w.mu.Unlock()
+}
+
+func (w *Writer) SetCompletionCode(code string) {
+	w.mu.Lock()
+	w.completionCode = code
+	w.mu.Unlock()
+}
+
 func (w *Writer) IncrementScanned() {
 	w.filesScanned.Add(1)
+}
+
+func (w *Writer) RecordCoverage(contentBytes int64, contentTruncated, sensitiveTruncated, hasWarnings bool) {
+	w.contentBytes.Add(contentBytes)
+	if contentTruncated {
+		w.contentTruncated.Add(1)
+	}
+	if sensitiveTruncated {
+		w.sensitiveTruncated.Add(1)
+	}
+	if hasWarnings {
+		w.filesWithWarnings.Add(1)
+	}
+}
+
+func (w *Writer) RecordFileError() {
+	w.fileErrors.Add(1)
 }
 
 func (w *Writer) Close() error {
@@ -259,9 +358,37 @@ func (w *Writer) Close() error {
 	if err := w.emitMetricsLocked(); err != nil {
 		closeErr = errors.Join(closeErr, err)
 	}
+	status := w.completion
+	if status == "" {
+		status = "complete"
+	}
+	if w.writeErr != nil || w.spool.currentError() != nil {
+		status = "incomplete"
+		w.completionCode = "output_failed"
+	}
+	errorCount := w.fileErrors.Load()
+	warningCodes := []string{}
+	if status != "complete" {
+		errorCount++
+		if w.completionCode != "" {
+			warningCodes = append(warningCodes, w.completionCode)
+		}
+	}
+	if err := w.writeRecord("scan_complete", map[string]interface{}{
+		"status": status, "files_scanned": w.filesScanned.Load(),
+		"files_processed": w.filesProcessed.Load(),
+		"error_count":     errorCount, "warning_codes": warningCodes,
+		"content_scanned_bytes":     w.contentBytes.Load(),
+		"content_truncated_files":   w.contentTruncated.Load(),
+		"sensitive_truncated_files": w.sensitiveTruncated.Load(),
+		"files_with_warnings":       w.filesWithWarnings.Load(),
+	}); err != nil {
+		closeErr = errors.Join(closeErr, err)
+	}
 	if err := w.closeFile(); err != nil {
 		closeErr = errors.Join(closeErr, err)
 	}
+	closeErr = errors.Join(closeErr, w.spool.close())
 	if w.otel != nil {
 		w.otel.Shutdown()
 	}
@@ -310,13 +437,11 @@ func (w *Writer) emitInitialRecords() error {
 	if err := w.writeRecord("system_info", w.sysInfo); err != nil {
 		return err
 	}
-	w.emitRecord("system_info", w.sysInfo)
 	for i := range w.sysInfo.RunningProcesses {
 		proc := w.sysInfo.RunningProcesses[i]
 		if err := w.writeRecord("process", &proc); err != nil {
 			return err
 		}
-		w.emitRecord("process", &proc)
 	}
 	return nil
 }
@@ -329,21 +454,10 @@ func (w *Writer) emitMetricsLocked() error {
 	if err := w.writeRecord("metrics", w.metrics); err != nil {
 		return err
 	}
-	w.emitRecord("metrics", w.metrics)
 	return nil
 }
 
-func (w *Writer) emitRecord(recordType string, payload interface{}) {
-	if w.otel == nil {
-		return
-	}
-	w.otel.Emit(recordType, payload)
-}
-
 func (w *Writer) shouldSync() bool {
-	if w.recordsSinceSync <= 1 {
-		return true
-	}
 	if w.recordsSinceSync >= flushEveryRecords {
 		return true
 	}
@@ -398,7 +512,6 @@ func (w *Writer) startAsyncWriter() {
 				continue
 			}
 			w.filesProcessed.Add(1)
-			w.emitRecord("file", req.payload)
 
 			w.recordsSinceSync++
 			if w.shouldSync() {

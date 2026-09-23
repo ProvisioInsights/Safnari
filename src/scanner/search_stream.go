@@ -71,13 +71,3 @@ func normalizeSearchTerms(terms []string) []string {
 	}
 	return normalized
 }
-
-func shouldUseStreamSearchCounter(contentReadMode string, hasCachedContent bool, termCount int) bool {
-	if hasCachedContent {
-		return false
-	}
-	if termCount == 0 {
-		return false
-	}
-	return strings.ToLower(strings.TrimSpace(contentReadMode)) == "stream"
-}

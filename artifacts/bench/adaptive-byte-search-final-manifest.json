@@ -1,0 +1,88 @@
+{
+  "baseline_source_sha": "956d509702b48fa967ae0e339ce16f648cf470d2",
+  "benchmark_nine_samples_per_workload": {
+    "duplicate_logs": 9,
+    "mixed_heavy_tail": 9,
+    "sensitive_dense": 9,
+    "small_files": 9
+  },
+  "benchmark_path": "artifacts/bench/adaptive-byte-search-candidate-bench.txt",
+  "build_flags": [
+    "GOEXPERIMENT=jsonv2",
+    "-tags jsonv2",
+    "-trimpath",
+    "-ldflags=-s -w"
+  ],
+  "cache_state": "warm-cache; cold cache not controlled",
+  "candidate_base_sha": "956d509702b48fa967ae0e339ce16f648cf470d2",
+  "candidate_uncommitted_src_sha256": "792c72ce564673371234d15771da3917efefb701106e0793d889291a2e9a5865",
+  "geomean_speedup_vs_bounded_close": 1.038884478077691,
+  "geomean_speedup_vs_frozen": 1.7530018377549432,
+  "go_version": "go version go1.26.3 darwin/arm64",
+  "median_speedup_vs_bounded_close": {
+    "duplicate_logs": 1.1690887829484655,
+    "mixed_heavy_tail": 0.9858282570541826,
+    "sensitive_dense": 1.0222738563355718,
+    "small_files": 0.9886737876158804
+  },
+  "median_speedup_vs_frozen": {
+    "duplicate_logs": 2.5236202119326108,
+    "mixed_heavy_tail": 1.8152011837122777,
+    "sensitive_dense": 1.3265642752844193,
+    "small_files": 1.554005047001498
+  },
+  "platform": "macOS-27.0-arm64-arm-64bit-Mach-O",
+  "process_corpus_sha256": "0a5aa19ea48459a9339f000f5af10bc3bce91eb5d460e95a715e549dd91d2eb2",
+  "process_path": "artifacts/bench/adaptive-byte-search-process-20260922",
+  "process_ratios_vs_bounded_close": {
+    "duplicate_logs": {
+      "p95_ratio_vs_bounded_close": 1.02066888450545,
+      "paired_runs": 30,
+      "peak_rss_ratio_vs_bounded_close": 1.0034036759700478
+    },
+    "mixed_heavy_tail": {
+      "p95_ratio_vs_bounded_close": 0.9839041713201718,
+      "paired_runs": 30,
+      "peak_rss_ratio_vs_bounded_close": 1.0059840425531914
+    },
+    "sensitive_dense": {
+      "p95_ratio_vs_bounded_close": 0.9496452679060319,
+      "paired_runs": 30,
+      "peak_rss_ratio_vs_bounded_close": 0.9971870604781997
+    },
+    "small_files": {
+      "p95_ratio_vs_bounded_close": 0.9785343445629139,
+      "paired_runs": 30,
+      "peak_rss_ratio_vs_bounded_close": 1.0101214574898785
+    }
+  },
+  "release_gate_2x_met": false,
+  "source_digest_method": "sorted src files excluding src/pgo; hash UTF-8 path, NUL, then SHA-256 digest of content",
+  "stripped_sizes": {
+    "safnari-darwin-amd64": {
+      "bytes": 16632880,
+      "sha256": "6ed3cfdd030c0b219288b671d781321330ffaf549ae1089c539d21c9518b148f",
+      "shrink_percent": 38.988345894006734
+    },
+    "safnari-darwin-arm64": {
+      "bytes": 15582018,
+      "sha256": "da64ac6da6cfc024beef3ca11d32f725c65fabcfe3bb98cd018cfd691c011059",
+      "shrink_percent": 40.15593083536033
+    },
+    "safnari-linux-amd64": {
+      "bytes": 16158882,
+      "sha256": "766f69b325d181de6c57898ce49afbd1be6f588f3a108702327b7d553c654453",
+      "shrink_percent": 39.512179893041456
+    },
+    "safnari-linux-arm64": {
+      "bytes": 15073442,
+      "sha256": "3eb1b4aaabc564dc4afa5cbfc7b8ed81b3eb6df1b241dc51bd67e372c042462a",
+      "shrink_percent": 40.56821632676847
+    },
+    "safnari-windows-amd64.exe": {
+      "bytes": 16694784,
+      "sha256": "79f4164bdb42facc2d21a8aac783dbd8b8a5857113bc8d96f022c2b409b339dd",
+      "shrink_percent": 38.86493175341232
+    }
+  }
+}

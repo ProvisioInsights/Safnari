@@ -1,6 +1,6 @@
 package scanner
 
-// FileRecord is the canonical v2 scan result record.
+// FileRecord is the canonical file payload in the v3 record envelope.
 // It is intentionally typed to avoid hot-path map mutation costs.
 type FileRecord struct {
 	Path                     string                 `json:"path"`

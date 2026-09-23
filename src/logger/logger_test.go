@@ -7,8 +7,6 @@ func TestLoggerFunctions(t *testing.T) {
 	if log == nil {
 		t.Fatal("log not initialized")
 	}
-	// Avoid os.Exit on Fatal
-	log.ExitFunc = func(int) {}
 
 	Debug("debug")
 	Info("info")
@@ -18,6 +16,4 @@ func TestLoggerFunctions(t *testing.T) {
 	Infof("%s", "infof")
 	Warnf("%s", "warnf")
 	Errorf("%s", "errorf")
-	Fatal("fatal")
-	Fatalf("%s", "fatalf")
 }

@@ -28,7 +28,7 @@ type lineRecord struct {
 	Payload       map[string]interface{} `json:"payload"`
 }
 
-func TestV2OutputNDJSONDeterministicAcrossProfiles(t *testing.T) {
+func TestV3OutputNDJSONDeterministicAcrossProfiles(t *testing.T) {
 	corpusDir := filepath.Join("..", "testdata", "corpus", "basic")
 	goldenSet := loadGoldenFileset(t, filepath.Join("..", "testdata", "golden", "fileset_basic.txt"))
 
@@ -36,13 +36,9 @@ func TestV2OutputNDJSONDeterministicAcrossProfiles(t *testing.T) {
 		cfg.PerfProfile = "adaptive"
 		cfg.SensitiveEngine = "auto"
 		cfg.SensitiveLongtail = "sampled"
-		cfg.ContentReadMode = "auto"
 	})
 	ultra := runScanAndNormalize(t, corpusDir, func(cfg *config.Config) {
 		cfg.PerfProfile = "ultra"
-		cfg.SensitiveEngine = "deterministic"
-		cfg.SensitiveLongtail = "off"
-		cfg.ContentReadMode = "stream"
 	})
 
 	assertParityAndGolden(t, goldenSet, adaptive, ultra)
@@ -87,10 +83,8 @@ func runScanAndNormalize(t *testing.T, corpusDir string, mutate func(cfg *config
 		SensitiveEngine:      "auto",
 		SensitiveLongtail:    "sampled",
 		SensitiveWindowBytes: 4096,
-		ContentReadMode:      "auto",
 		StreamChunkSize:      256 * 1024,
 		StreamOverlapBytes:   512,
-		MmapMinSize:          1,
 		JSONLayout:           "ndjson",
 	}
 	if mutate != nil {

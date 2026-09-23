@@ -1,42 +1,10 @@
 package prefilter
 
 import (
-	"bytes"
-	"reflect"
 	"sort"
 	"strings"
 	"testing"
 )
-
-func TestSearchCounterParityWithByteCount(t *testing.T) {
-	terms := []string{"alpha", "Beta", "alpha", ""}
-	content := "alpha Beta alpha alphabet beta"
-
-	counter := BuildSearchCounter(terms)
-	counts := counter.Count(content)
-	expected := map[string]int{
-		"alpha": bytes.Count([]byte(content), []byte("alpha")),
-		"Beta":  bytes.Count([]byte(content), []byte("Beta")),
-	}
-
-	if !reflect.DeepEqual(expected, counts) {
-		t.Fatalf("search counter mismatch: expected=%v got=%v", expected, counts)
-	}
-}
-
-func TestSearchCounterAutoUsesAhoForLargeInputs(t *testing.T) {
-	terms := []string{"alpha", "beta", "gamma", "delta", "epsilon", "zeta", "eta", "theta", "iota"}
-	content := strings.Repeat("alpha beta gamma delta epsilon zeta eta theta iota ", 256)
-
-	counter := BuildSearchCounter(terms)
-	counts := counter.Count(content)
-	for _, term := range terms {
-		expected := bytes.Count([]byte(content), []byte(term))
-		if counts[term] != expected {
-			t.Fatalf("term %q mismatch: expected=%d got=%d", term, expected, counts[term])
-		}
-	}
-}
 
 func TestSensitiveGateSafeMode(t *testing.T) {
 	patterns := []string{"email", "api_key", "custom"}
@@ -131,16 +99,9 @@ func TestSensitiveGateSafeModeShapeGateBlocksClearlyImpossibleContent(t *testing
 	}
 }
 
-func TestTokenContainsStableAcrossSIMDToggle(t *testing.T) {
+func TestTokenContains(t *testing.T) {
 	content := "prefix token suffix"
-	SetSIMDFastpath(false)
-	base := tokenContains(content, "token")
-
-	SetSIMDFastpath(true)
-	optimized := tokenContains(content, "token")
-	SetSIMDFastpath(false)
-
-	if base != optimized {
-		t.Fatalf("expected stable tokenContains result across SIMD toggle, base=%t optimized=%t", base, optimized)
+	if !tokenContains(content, "token") || tokenContains(content, "absent") {
+		t.Fatal("unexpected token search result")
 	}
 }
