@@ -20,7 +20,7 @@ See [migration-v3.md](migration-v3.md) for configuration, spool, and rollback st
   and selects exact-search counting based on the term set and observed match density.
 - Diagnostics use `log/slog` on stderr and progress uses periodic counters.
 - The standard build uses JSON-v2 and retains OTEL/HTTP.
-- Release builds use Go 1.26.8 with updated gRPC and x/net dependencies.
+- Release builds use Go 1.26.8 with updated gRPC, x/net, and OTEL SDK dependencies.
 
 ### Fixed
 

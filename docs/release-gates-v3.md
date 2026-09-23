@@ -291,17 +291,19 @@ and dependency update below; it does not certify the updated release binary.
 ## Security and native-test correction on 2026-09-23
 
 The first PR run found reachable advisories in Go 1.26.3, gRPC 1.80.0, and x/net 0.53.0.
-The candidate now uses Go 1.26.8, gRPC 1.83.1, and x/net 0.55.0. Local `govulncheck ./...`
-reports zero reachable vulnerabilities. Native Windows tests exposed a nil service handle in
-the old service-enumeration path and two tests for a rooted-open path that is disabled on
-Windows. Service status now uses the Windows service manager directly. Windows file identity
-is pinned during traversal so the fallback open can reject a changed pathname. This corrected
-an additional failure in the first Windows rerun; the latest native run remains pending.
+The candidate now uses Go 1.26.8, gRPC 1.83.1, x/net 0.55.0, and OTEL SDK 1.45.0. Local
+`govulncheck ./...` reports zero reachable vulnerabilities. Native Windows tests exposed a nil
+service handle in the old service-enumeration path and two tests for a rooted-open path that
+is disabled on Windows. Service status now uses the Windows service manager directly. Windows
+file identity is pinned during traversal so the fallback open can reject a changed pathname.
+This corrected an additional failure in the first Windows rerun; the latest native run remains
+pending.
 
-All five stripped binaries compile under Go 1.26.8. The macOS ARM64 binary is 15,699,458
-bytes, under the 16 MiB cap. The other targets shrink by 38.39% to 40.05% against stripped
-frozen-source binaries built with the same toolchain. Fresh 30-run process comparisons on
-six corpora retained identical file evidence. Raw results and binary digests are in
+All five stripped binaries compile under Go 1.26.8 with OTEL SDK 1.45.0. The macOS ARM64
+binary is 15,733,010 bytes, under the 16 MiB cap. The other targets shrink by 38.22% to
+40.05% against stripped frozen-source binaries built with the same toolchain. Fresh 30-run
+process comparisons before the OTEL SDK update on six corpora retained identical file evidence.
+Raw results and binary digests for those process runs are in
 `artifacts/bench/release-candidate-go1268-20260923/`.
 
 | Workload | Median process speedup | Process p95 ratio | Peak RSS ratio |
