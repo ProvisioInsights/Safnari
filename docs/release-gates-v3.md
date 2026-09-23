@@ -294,8 +294,9 @@ The first PR run found reachable advisories in Go 1.26.3, gRPC 1.80.0, and x/net
 The candidate now uses Go 1.26.8, gRPC 1.83.1, and x/net 0.55.0. Local `govulncheck ./...`
 reports zero reachable vulnerabilities. Native Windows tests exposed a nil service handle in
 the old service-enumeration path and two tests for a rooted-open path that is disabled on
-Windows. Service status now uses the Windows service manager directly, and the fallback
-file-open path checks that the file still matches traversal metadata.
+Windows. Service status now uses the Windows service manager directly. Windows file identity
+is pinned during traversal so the fallback open can reject a changed pathname. This corrected
+an additional failure in the first Windows rerun; the latest native run remains pending.
 
 All five stripped binaries compile under Go 1.26.8. The macOS ARM64 binary is 15,699,458
 bytes, under the 16 MiB cap. The other targets shrink by 38.39% to 40.05% against stripped

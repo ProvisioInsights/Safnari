@@ -22,6 +22,9 @@ func TestOpenChunkSourceRejectsReplacedFile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if !os.SameFile(info, info) {
+		t.Fatal("cannot pin traversal identity")
+	}
 	replacement := filepath.Join(filepath.Dir(path), "replacement.txt")
 	if err := os.WriteFile(replacement, []byte("replacement"), 0600); err != nil {
 		t.Fatal(err)

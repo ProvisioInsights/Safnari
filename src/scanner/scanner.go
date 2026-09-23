@@ -3,6 +3,7 @@ package scanner
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -174,6 +175,17 @@ func ScanFiles(ctx context.Context, cfg *config.Config, metrics *output.Metrics,
 			cache.Close()
 		}
 	}()
+	var firstErr error
+	var firstErrOnce sync.Once
+	setScanError := func(err error) {
+		if err == nil || errors.Is(err, context.Canceled) {
+			return
+		}
+		firstErrOnce.Do(func() {
+			firstErr = err
+			cancel()
+		})
+	}
 	go scheduler.Run(ctx, filesChan)
 
 	// Start the file walking in a separate goroutine
@@ -203,6 +215,11 @@ func ScanFiles(ctx context.Context, cfg *config.Config, metrics *output.Metrics,
 				if matcher.ShouldInclude(path) {
 					info, err := d.Info()
 					if err == nil {
+						// Windows loads the file ID lazily. Pin it while walking so
+						// a later open can detect a pathname replaced in the queue.
+						if runtime.GOOS == "windows" && !os.SameFile(info, info) {
+							return fmt.Errorf("cannot pin file identity: %s", path)
+						}
 						if cfg.DeltaScan && info.ModTime().Before(lastScanTime) {
 							return nil
 						}
@@ -229,23 +246,12 @@ func ScanFiles(ctx context.Context, cfg *config.Config, metrics *output.Metrics,
 			})
 			if err != nil && !errors.Is(err, context.Canceled) {
 				logger.Warnf("Error walking path %s: %v", startPath, err)
+				setScanError(err)
 			}
 		}
 	}()
 
 	// Start worker pool
-	var firstErr error
-	var firstErrOnce sync.Once
-	setScanError := func(err error) {
-		if err == nil || errors.Is(err, context.Canceled) {
-			return
-		}
-		firstErrOnce.Do(func() {
-			firstErr = err
-			cancel()
-		})
-	}
-
 	for range cfg.ConcurrencyLevel {
 		wg.Add(1)
 		go func() {
