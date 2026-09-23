@@ -334,11 +334,21 @@ of the same 128-file corpus measured a 0.908x p95 ratio and retained identical f
 The controlled workflow now takes 90 process samples per workload to test whether the tail
 finding repeats; the original failed result remains recorded.
 
+The 90-run controlled repeat on PR head `8afa701` passed. Its four benchmark median speedups
+were 2.137x, 2.280x, 1.958x, and 3.581x, for a **2.418x** geometric mean. The respective
+process p95 ratios were 0.819x, 0.444x, 0.626x, and 0.633x. Peak-RSS ratios were 0.852x,
+0.891x, 0.901x, and 0.896x. All five stripped target sizes passed. The runner was macOS 15.7.9
+ARM64 with Go 1.26.8; its manifest records the exact corpus and binary hashes. These are
+warm-cache scan-only results, and the preceding 30-run small-file p95 failure remains visible.
+The [workflow evidence](https://github.com/ProvisioInsights/Safnari/actions/runs/35827744950)
+contains all benchmark samples, process CSVs, build context, and gate output.
+
 ## Validation and unresolved gates
 
 `make lint`, `make test`, macOS scanner/output/config race tests, local `govulncheck`, and all
-five cross-builds pass on the updated source. Native Linux ARM64 and macOS AMD64 tests passed
-on the first PR revision; the updated revision and Windows fixes await CI validation.
+five cross-builds pass on the updated source. The PR also passed native macOS ARM64 and AMD64,
+Linux ARM64, and Windows tests, security checks, all five build jobs, and SBOM generation on
+the 90-run revision.
 
 Local OTLP/HTTP tests cover accepted export, outage and replay, privacy before spooling,
 destination mismatch, partial success, permanent HTTP rejection, exclusive invocation lock,
@@ -347,14 +357,10 @@ fault injection at every commit/acknowledgment cut point or a managed receiver p
 
 The following remain release blockers or unverified requirements:
 
-- Reproduce at least 1.75x equivalent-work throughput on the updated Go 1.26.8 candidate and
-  verify every workload's median and p95 limits on controlled paired runners. The 1.753x result
-  belongs to the earlier Go 1.26.3 build.
 - Complete controlled wide/deep and bounded-content throughput checks, controlled first-pass
   behavior, delivery overhead, and healthy/slow/disconnected receiver measurements.
-- Rerun native Windows and macOS AMD64 tests on the updated revision, complete disk-full and
-  crash-cutpoint tests, and run a 25–50 device
-  disconnected-recovery pilot using existing deployment tooling.
+- Complete disk-full and crash-cutpoint tests, and run a 25–50 device disconnected-recovery
+  pilot using existing deployment tooling.
 - Verify the final candidate on controlled release runners. Hosted or local laptop timings are
   development evidence, not a release certificate.
 

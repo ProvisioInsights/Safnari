@@ -69,7 +69,7 @@ jobs:
               -benchmem -count=9 -timeout=90m ./scanner
           ) > evidence/candidate-bench.txt 2>&1
         shell: bash
-      - name: Run thirty paired process samples and compare retained evidence
+      - name: Run ninety paired process samples and compare retained evidence
         run: |
           python3 candidate/scripts/bench/process-release-v3.py \
             --baseline baseline/bin/safnari-darwin-arm64 \
