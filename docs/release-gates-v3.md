@@ -291,7 +291,7 @@ and dependency update below; it does not certify the updated release binary.
 ## Security and native-test correction on 2026-09-23
 
 The first PR run found reachable advisories in Go 1.26.3, gRPC 1.80.0, and x/net 0.53.0.
-The candidate now uses Go 1.26.8, gRPC 1.83.1, x/net 0.55.0, and OTEL SDK 1.45.0. Local
+The candidate now uses Go 1.26.8, gRPC 1.83.2, x/net 0.58.0, and OTEL SDK 1.45.0. Local
 `govulncheck ./...` reports zero reachable vulnerabilities. Native Windows tests exposed a nil
 service handle in the old service-enumeration path and two tests for a rooted-open path that
 is disabled on Windows. Service status now uses the Windows service manager directly. Windows
@@ -342,6 +342,11 @@ ARM64 with Go 1.26.8; its manifest records the exact corpus and binary hashes. T
 warm-cache scan-only results, and the preceding 30-run small-file p95 failure remains visible.
 The [workflow evidence](https://github.com/ProvisioInsights/Safnari/actions/runs/35827744950)
 contains all benchmark samples, process CSVs, build context, and gate output.
+
+After RC1 was published, the default-branch dependency scan reported a high-severity alert for
+gRPC 1.83.1. The advisory concerns xDS servers, and Safnari's reachable-code scan found no
+affected call path, but RC2 updates to the patched gRPC 1.83.2. The scan-only performance and
+size gates must be rerun on the RC2 source before it replaces RC1 for the pilot.
 
 ## Validation and unresolved gates
 
