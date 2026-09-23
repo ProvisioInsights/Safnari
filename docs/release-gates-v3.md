@@ -371,10 +371,15 @@ was 15,796,290 bytes, below 16 MiB and 0.3% larger than the Go 1.26.8 build. `ma
 samples, process evidence, binary hashes, and source-patch digest are in
 `artifacts/bench/go127-upgrade-20260923/`.
 
-These are local warm-cache and cross-compilation results, not the controlled release gate or
-native Linux/Windows runtime evidence. The frozen-source speed, tail, and size gates must be
-rerun on the exact PR head before replacing the pilot binary. Go 1.27 also raises the minimum
-supported macOS version to 13 Ventura.
+The [controlled workflow](https://github.com/ProvisioInsights/Safnari/actions/runs/35874567210)
+passed on PR head `064ea76dce9c61b883c4f78118642ff11c8a425d` with Go 1.27.1. Against the
+frozen pre-optimization source, its four-workload throughput geometric mean was 3.146x over
+nine samples per workload. Across 90 paired process runs per workload, the worst p95 latency
+ratio was 0.842x and the worst peak-RSS ratio was 0.912x; file evidence matched. All five
+stripped target sizes passed, with macOS ARM64 at 15,796,290 bytes. The PR also passed native
+macOS ARM64 and Intel, Linux ARM64, and Windows tests, security checks, five build jobs, and
+SBOM generation. These results do not measure managed-delivery overhead or cold-cache behavior.
+Go 1.27 raises the minimum supported macOS version to 13 Ventura.
 
 ## Validation and unresolved gates
 

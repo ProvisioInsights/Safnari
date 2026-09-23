@@ -47,4 +47,7 @@ pilot requirements remain before general availability.
 
 The Go 1.27.1 toolchain update passed local tests, race checks, cross-builds, size, and paired
 warm-cache regression checks. Its four-workload throughput ratio against Go 1.26.8 was 0.982x;
-controlled release validation and native Linux/Windows checks remain pending for this update.
+the toolchain alone did not improve scan speed. The controlled runner measured a 3.146x
+four-workload speedup against the frozen pre-optimization source on the exact Go 1.27.1 PR head.
+Its process p95, memory, and five target-size gates passed. Native macOS, Linux ARM64, and Windows
+PR tests passed. See [release-gates-v3.md](release-gates-v3.md) for the evidence boundary.
