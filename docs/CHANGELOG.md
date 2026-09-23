@@ -56,6 +56,8 @@ The RC3 repository update adds source-backed release charts and repairs the macO
 performance-dashboard harness. The scanner and schema behavior are unchanged from the merged
 Go 1.27.1 candidate. This remains a prerelease pending managed-delivery validation and pilot
 evidence.
+
 The newer RC3 PR controlled run measured 2.406x geometric-mean scan throughput against the
 frozen source, with process p95, memory, and all five size gates passing. The charts use that
 run; the earlier 3.146x Go 1.27.1 run remains available for comparison.
+The exact RC3 tag also passed the controlled gate at 2.394x and passed native CI and SBOM jobs.

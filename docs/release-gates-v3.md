@@ -402,14 +402,18 @@ destination mismatch, partial success, permanent HTTP rejection, exclusive invoc
 corrupt committed batches, capacity refusal, and event identity. They do not substitute for
 fault injection at every commit/acknowledgment cut point or a managed receiver pilot.
 
+The [RC3 tag validation](https://github.com/ProvisioInsights/Safnari/actions/runs/35882734911)
+passed on merged commit `fcf140c1309580e5658903af1d0fc3f4c74a5805` with Go 1.27.1.
+The four-workload geometric mean was 2.394x; retained file evidence, process p95, peak RSS,
+and all five stripped size gates passed. The tag's native CI and SBOM jobs passed. This closes
+the exact-candidate controlled-runner check for RC3, not the delivery and pilot checks below.
+
 The following remain release blockers or unverified requirements:
 
 - Complete controlled wide/deep and bounded-content throughput checks, controlled first-pass
   behavior, delivery overhead, and healthy/slow/disconnected receiver measurements.
 - Complete disk-full and crash-cutpoint tests, and run a 25–50 device disconnected-recovery
   pilot using existing deployment tooling.
-- Verify the final candidate on controlled release runners. Hosted or local laptop timings are
-  development evidence, not a release certificate.
 
 Do not publish a general-availability release or call the collector fleet-ready until these
 gates pass. A prerelease may be used for bounded validation with explicit limitations. Kai

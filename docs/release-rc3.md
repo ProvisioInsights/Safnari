@@ -19,6 +19,9 @@ least 38% smaller; macOS ARM64 measured 15,796,290 bytes. The Go 1.27.1 toolchai
 measured 0.982× throughput relative to Go 1.26.8.
 An earlier controlled run on the same scanner code measured 3.146× and remains in the
 repository; the charts show the newer RC3 PR run.
+The [exact tag validation](https://github.com/ProvisioInsights/Safnari/actions/runs/35882734911)
+passed at 2.394× geometric-mean throughput, with retained evidence, p95 latency, RSS, and all
+five stripped size gates passing.
 
 See the [throughput chart](https://github.com/ProvisioInsights/Safnari/blob/safnari-20260923a-rc3/docs/assets/release-v3-throughput.svg),
 [size chart](https://github.com/ProvisioInsights/Safnari/blob/safnari-20260923a-rc3/docs/assets/release-v3-size.svg),
