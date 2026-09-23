@@ -13,6 +13,31 @@ import (
 	"safnari/config"
 )
 
+func TestOpenChunkSourceRejectsReplacedFile(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "sample.txt")
+	if err := os.WriteFile(path, []byte("original"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Lstat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	replacement := filepath.Join(filepath.Dir(path), "replacement.txt")
+	if err := os.WriteFile(replacement, []byte("replacement"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(path); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Rename(replacement, path); err != nil {
+		t.Fatal(err)
+	}
+	if source, err := openChunkSource(path, info, nil); err == nil {
+		_ = source.Close()
+		t.Fatal("accepted a replacement file after traversal")
+	}
+}
+
 func TestChunkSourceScanReusesHeaderWithoutChangingStream(t *testing.T) {
 	for _, size := range []int{0, 1, 127, 4096, 4097, 9000} {
 		payload := make([]byte, size)

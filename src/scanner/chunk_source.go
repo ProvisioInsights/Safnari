@@ -44,6 +44,16 @@ func openChunkSource(path string, info os.FileInfo, cfg *config.Config) (*ChunkS
 	if err != nil {
 		return nil, err
 	}
+	if info != nil {
+		openedInfo, statErr := file.Stat()
+		if statErr != nil || !os.SameFile(info, openedInfo) {
+			_ = file.Close()
+			if statErr != nil {
+				return nil, statErr
+			}
+			return nil, fmt.Errorf("file changed during traversal")
+		}
+	}
 	return newChunkSource(path, info, cfg, file)
 }
 

@@ -20,6 +20,13 @@ See [migration-v3.md](migration-v3.md) for configuration, spool, and rollback st
   and selects exact-search counting based on the term set and observed match density.
 - Diagnostics use `log/slog` on stderr and progress uses periodic counters.
 - The standard build uses JSON-v2 and retains OTEL/HTTP.
+- Release builds use Go 1.26.8 with updated gRPC and x/net dependencies.
+
+### Fixed
+
+- Windows service collection now opens service handles before querying status.
+- The fallback file-open path rejects a file replaced after traversal.
+- OTEL retries respect the receiver's `Retry-After` delay during an invocation.
 
 ### Removed
 
@@ -29,7 +36,8 @@ See [migration-v3.md](migration-v3.md) for configuration, spool, and rollback st
 
 ### Validation status
 
-The measured four-workload local warm-cache throughput gain is 1.753x against source
-`956d509702b48fa967ae0e339ce16f648cf470d2`, at equivalent configured coverage. The
-accepted aggregate speed target is 1.75x. This local result is not controlled-runner proof.
-The remaining release requirements are tracked in [release-gates-v3.md](release-gates-v3.md).
+The earlier Go 1.26.3 build measured a 1.753x four-workload local warm-cache throughput gain
+against source `956d509702b48fa967ae0e339ce16f648cf470d2` at equivalent coverage. The
+accepted aggregate speed target is 1.75x. The Go 1.26.8 release build needs a new paired
+controlled-runner benchmark before this target can be credited. The remaining release
+requirements are tracked in [release-gates-v3.md](release-gates-v3.md).

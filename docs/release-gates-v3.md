@@ -285,13 +285,43 @@ and was stopped. No speed gate is credited to that incomplete attempt.
 The local numeric gate passes at 1.753x using the recorded nine-sample benchmark pair, these
 fresh process CSVs, and newly built stripped binaries. Its output is in
 `artifacts/bench/release-candidate-20260923/gate-output.txt`. The benchmark pair predates the
-shutdown-race fix, which does not change the scan path; controlled-runner validation remains open.
+shutdown-race fix, which does not change the scan path. This result also predates the toolchain
+and dependency update below; it does not certify the updated release binary.
+
+## Security and native-test correction on 2026-09-23
+
+The first PR run found reachable advisories in Go 1.26.3, gRPC 1.80.0, and x/net 0.53.0.
+The candidate now uses Go 1.26.8, gRPC 1.83.1, and x/net 0.55.0. Local `govulncheck ./...`
+reports zero reachable vulnerabilities. Native Windows tests exposed a nil service handle in
+the old service-enumeration path and two tests for a rooted-open path that is disabled on
+Windows. Service status now uses the Windows service manager directly, and the fallback
+file-open path checks that the file still matches traversal metadata.
+
+All five stripped binaries compile under Go 1.26.8. The macOS ARM64 binary is 15,699,458
+bytes, under the 16 MiB cap. The other targets shrink by 38.39% to 40.05% against stripped
+frozen-source binaries built with the same toolchain. Fresh 30-run process comparisons on
+six corpora retained identical file evidence. Raw results and binary digests are in
+`artifacts/bench/release-candidate-go1268-20260923/`.
+
+| Workload | Median process speedup | Process p95 ratio | Peak RSS ratio |
+|---|---:|---:|---:|
+| Small files | 1.153x | 0.882x | 0.934x |
+| Mixed heavy tail | 1.867x | 0.610x | 0.909x |
+| Sensitive dense | 1.402x | 0.712x | 0.910x |
+| Duplicate logs | 1.317x | 0.758x | 0.911x |
+| Wide/deep | 1.142x | 0.803x | 0.923x |
+| Bounded content | 2.015x | 0.563x | 0.888x |
+
+The four core process-median speedups have a 1.412x geometric mean under this toolchain.
+Process medians are a separate measure from the specified nine-sample Go benchmark throughput
+gate. The updated binary still needs that gate on a paired controlled runner. The labeled
+`Schema v3 release validation` workflow is prepared to run it on a fixed macOS ARM64 runner.
 
 ## Validation and unresolved gates
 
-`make lint`, `make test`, macOS scanner/output race tests, and native Linux ARM64 scanner,
-output, and config tests pass on the current source. It was cross-compiled for all five
-targets. Windows and macOS AMD64 have cross-compilation evidence only.
+`make lint`, `make test`, macOS scanner/output/config race tests, local `govulncheck`, and all
+five cross-builds pass on the updated source. Native Linux ARM64 and macOS AMD64 tests passed
+on the first PR revision; the updated revision and Windows fixes await CI validation.
 
 Local OTLP/HTTP tests cover accepted export, outage and replay, privacy before spooling,
 destination mismatch, partial success, permanent HTTP rejection, exclusive invocation lock,
@@ -300,11 +330,13 @@ fault injection at every commit/acknowledgment cut point or a managed receiver p
 
 The following remain release blockers or unverified requirements:
 
-- Reproduce at least 1.75x equivalent-work throughput and verify every workload's median and
-  p95 limits on controlled paired runners. The 1.753x result is local warm-cache evidence only.
-- Complete the fixed suite with wide/deep traversal, large bounded content, first-pass behavior,
-  delivery overhead, and controlled healthy/slow/disconnected receivers.
-- Run native Windows and macOS AMD64 tests, disk-full/crash-cutpoint tests, and a 25–50 device
+- Reproduce at least 1.75x equivalent-work throughput on the updated Go 1.26.8 candidate and
+  verify every workload's median and p95 limits on controlled paired runners. The 1.753x result
+  belongs to the earlier Go 1.26.3 build.
+- Complete controlled wide/deep and bounded-content throughput checks, controlled first-pass
+  behavior, delivery overhead, and healthy/slow/disconnected receiver measurements.
+- Rerun native Windows and macOS AMD64 tests on the updated revision, complete disk-full and
+  crash-cutpoint tests, and run a 25–50 device
   disconnected-recovery pilot using existing deployment tooling.
 - Verify the final candidate on controlled release runners. Hosted or local laptop timings are
   development evidence, not a release certificate.

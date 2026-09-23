@@ -10,7 +10,9 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -37,14 +39,71 @@ type otelLogger struct {
 }
 
 type statusTransport struct {
-	base   http.RoundTripper
-	status *atomic.Int64
+	base      http.RoundTripper
+	status    *atomic.Int64
+	retryGate *retryGate
+}
+
+type retryGate struct {
+	mu    sync.Mutex
+	until time.Time
+}
+
+func (g *retryGate) wait(ctx context.Context) error {
+	for {
+		g.mu.Lock()
+		delay := time.Until(g.until)
+		g.mu.Unlock()
+		if delay <= 0 {
+			return nil
+		}
+		timer := time.NewTimer(delay)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return ctx.Err()
+		case <-timer.C:
+		}
+	}
+}
+
+func (g *retryGate) honor(header http.Header) {
+	value := strings.TrimSpace(header.Get("Retry-After"))
+	if value == "" {
+		return
+	}
+	var until time.Time
+	if seconds, err := strconv.ParseInt(value, 10, 64); err == nil {
+		if seconds <= 0 {
+			return
+		}
+		maxSeconds := int64((1<<63 - 1) / int64(time.Second))
+		if seconds > maxSeconds {
+			seconds = maxSeconds
+		}
+		until = time.Now().Add(time.Duration(seconds) * time.Second)
+	} else if date, err := http.ParseTime(value); err == nil {
+		until = date
+	}
+	g.mu.Lock()
+	if until.After(g.until) {
+		g.until = until
+	}
+	g.mu.Unlock()
 }
 
 func (t statusTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	if err := t.retryGate.wait(req.Context()); err != nil {
+		return nil, err
+	}
 	resp, err := t.base.RoundTrip(req)
 	if resp != nil {
 		t.status.Store(int64(resp.StatusCode))
+		switch resp.StatusCode {
+		case http.StatusTooManyRequests, http.StatusBadGateway,
+			http.StatusServiceUnavailable, http.StatusGatewayTimeout:
+			t.retryGate.honor(resp.Header)
+		}
 	}
 	return resp, err
 }
@@ -95,8 +154,17 @@ func newOtelLogger(cfg *config.Config) (*otelLogger, error) {
 		timeout = 5 * time.Second
 	}
 	status := &atomic.Int64{}
-	client := &http.Client{Transport: statusTransport{base: http.DefaultTransport, status: status}, Timeout: timeout}
-	opts := []otlploghttp.Option{otlploghttp.WithEndpointURL(endpoint), otlploghttp.WithHTTPClient(client)}
+	client := &http.Client{Transport: statusTransport{
+		base: http.DefaultTransport, status: status, retryGate: &retryGate{},
+	}, Timeout: timeout}
+	opts := []otlploghttp.Option{
+		otlploghttp.WithEndpointURL(endpoint),
+		otlploghttp.WithHTTPClient(client),
+		otlploghttp.WithRetry(otlploghttp.RetryConfig{
+			Enabled: true, InitialInterval: 500 * time.Millisecond,
+			MaxInterval: 30 * time.Second, MaxElapsedTime: time.Minute,
+		}),
+	}
 	if len(cfg.OtelHeaders) > 0 {
 		opts = append(opts, otlploghttp.WithHeaders(cfg.OtelHeaders))
 	}

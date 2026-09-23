@@ -73,6 +73,9 @@ func TestDirectoryRootCacheRejectsSymlinkEscape(t *testing.T) {
 }
 
 func TestDirectoryRootCacheRejectsReplacedFile(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("rooted scan path is disabled on Windows")
+	}
 	rootPath := t.TempDir()
 	path := filepath.Join(rootPath, "file.txt")
 	if err := os.WriteFile(path, []byte("original"), 0600); err != nil {
@@ -162,6 +165,9 @@ func TestDirectoryRootCacheIsBounded(t *testing.T) {
 }
 
 func TestFileTimesFromTraversalInfoMatchesPath(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("descriptor time reuse is disabled on Windows")
+	}
 	path := filepath.Join(t.TempDir(), "file.txt")
 	if err := os.WriteFile(path, []byte("sample"), 0600); err != nil {
 		t.Fatal(err)

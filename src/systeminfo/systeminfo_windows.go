@@ -12,9 +12,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/shirou/gopsutil/v4/winservices"
 	"golang.org/x/sys/windows/registry"
 	"golang.org/x/sys/windows/svc"
+	"golang.org/x/sys/windows/svc/mgr"
 )
 
 const trustedCommandPath = `C:\Windows\System32;C:\Windows\System32\wbem;C:\Windows\System32\WindowsPowerShell\v1.0;C:\Windows`
@@ -124,17 +124,27 @@ func gatherInstalledApps(sysInfo *SystemInfo) error {
 }
 
 func gatherRunningServices(sysInfo *SystemInfo) error {
-	services, err := winservices.ListServices()
+	manager, err := mgr.Connect()
 	if err != nil {
-		return fmt.Errorf("failed to list services: %v", err)
+		return fmt.Errorf("failed to open service manager: %w", err)
 	}
-	for i := range services {
-		svcInfo := &services[i]
-		if err := svcInfo.GetServiceDetail(); err != nil {
+	defer manager.Disconnect()
+	names, err := manager.ListServices()
+	if err != nil {
+		return fmt.Errorf("failed to list services: %w", err)
+	}
+	for _, name := range names {
+		service, err := manager.OpenService(name)
+		if err != nil {
 			continue
 		}
-		state := serviceStateToString(svcInfo.Status.State)
-		sysInfo.RunningServices = append(sysInfo.RunningServices, ServiceInfo{Name: svcInfo.Name, Status: state})
+		status, queryErr := service.Query()
+		_ = service.Close()
+		if queryErr != nil {
+			continue
+		}
+		sysInfo.RunningServices = append(sysInfo.RunningServices,
+			ServiceInfo{Name: name, Status: serviceStateToString(status.State)})
 	}
 	return nil
 }
