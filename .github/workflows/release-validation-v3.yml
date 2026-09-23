@@ -51,7 +51,8 @@ jobs:
                 -ldflags='-s -w' -o "../bin/safnari-$os-$arch$ext" ./cmd
             done
           )
-          make -C candidate build-release-all VERSION=safnari-20260923a
+          candidate_sha=$(git -C candidate rev-parse --short=12 HEAD)
+          make -C candidate build-release-all VERSION="validation-$candidate_sha"
           shasum -a 256 baseline/bin/* candidate/bin/safnari-* > evidence/binary-sha256.txt
         shell: bash
       - name: Run nine paired benchmark samples per workload
@@ -65,7 +66,7 @@ jobs:
           ) > evidence/baseline-bench.txt 2>&1
           (
             cd candidate/src
-            SAFNARI_DISABLE_PROGRESS=1 GOEXPERIMENT=jsonv2 go test -tags jsonv2 -run '^$' -bench "$pattern" \
+            SAFNARI_DISABLE_PROGRESS=1 go test -run '^$' -bench "$pattern" \
               -benchmem -count=9 -timeout=90m ./scanner
           ) > evidence/candidate-bench.txt 2>&1
         shell: bash

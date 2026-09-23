@@ -1,0 +1,125 @@
+{
+  "baseline_build": "make build-release-all with GOTOOLCHAIN=go1.26.8 and GOEXPERIMENT=jsonv2",
+  "baseline_source_sha": "95deba402f5658167ebdfe8d76ee74a00c631727",
+  "baseline_toolchain": "go1.26.8 darwin/arm64",
+  "benchmark": {
+    "duplicate_logs": {
+      "baseline_median_ns": 13594221,
+      "baseline_samples": 9,
+      "candidate_median_ns": 13562569,
+      "candidate_samples": 9,
+      "throughput_ratio": 1.0023337761452127
+    },
+    "mixed_heavy_tail": {
+      "baseline_median_ns": 35980802,
+      "baseline_samples": 9,
+      "candidate_median_ns": 37458653,
+      "candidate_samples": 9,
+      "throughput_ratio": 0.9605471398023843
+    },
+    "sensitive_dense": {
+      "baseline_median_ns": 11741758,
+      "baseline_samples": 9,
+      "candidate_median_ns": 11896098,
+      "candidate_samples": 9,
+      "throughput_ratio": 0.9870259979364662
+    },
+    "small_files": {
+      "baseline_median_ns": 32980836,
+      "baseline_samples": 9,
+      "candidate_median_ns": 33693030,
+      "candidate_samples": 9,
+      "throughput_ratio": 0.9788622750758836
+    }
+  },
+  "benchmark_geomean_throughput_ratio": 0.9820764749957235,
+  "cache_state": "warm cache; cold cache not controlled",
+  "candidate_base_sha": "95deba402f5658167ebdfe8d76ee74a00c631727",
+  "candidate_build": "make build-release-all with Go 1.27.1 stable encoding/json/v2",
+  "candidate_code_patch_sha256": "c9111a79c3dd78b57f5def5d448ca586682793f8fbf80e03ecb3ba6d5050a4f4",
+  "candidate_toolchain": "go1.27.1 darwin/arm64",
+  "process": {
+    "bounded_content": {
+      "median_throughput_ratio": 0.9992851680745239,
+      "p95_latency_ratio": 0.9846529592458879,
+      "paired_runs": 30,
+      "peak_rss_ratio": 1.0006802721088435
+    },
+    "duplicate_logs": {
+      "median_throughput_ratio": 0.9738733572179564,
+      "p95_latency_ratio": 0.9675418527994323,
+      "paired_runs": 30,
+      "peak_rss_ratio": 1.0047586675730795
+    },
+    "mixed_heavy_tail": {
+      "median_throughput_ratio": 0.9926197325796362,
+      "p95_latency_ratio": 0.9783043569021355,
+      "paired_runs": 30,
+      "peak_rss_ratio": 0.9777486910994765
+    },
+    "sensitive_dense": {
+      "median_throughput_ratio": 1.0044881053875394,
+      "p95_latency_ratio": 1.030427487840375,
+      "paired_runs": 30,
+      "peak_rss_ratio": 0.9965034965034965
+    },
+    "small_files": {
+      "median_throughput_ratio": 1.0163063690507492,
+      "p95_latency_ratio": 0.9779899400859516,
+      "paired_runs": 30,
+      "peak_rss_ratio": 1.0067385444743935
+    },
+    "wide_deep": {
+      "median_throughput_ratio": 1.003974534005675,
+      "p95_latency_ratio": 0.990044808239705,
+      "paired_runs": 30,
+      "peak_rss_ratio": 1.034629404617254
+    }
+  },
+  "process_manifest": {
+    "baseline_binary_sha256": "520f29c0c3a73f6554dbff8a960a30d1ce52a70ee2528e3b3fb075e43c4651e1",
+    "cache_state": "timed runs after one priming invocation per binary; cold cache not controlled",
+    "candidate_binary_sha256": "e6f4acb24b6e6d443f8af9899f71a0e81e842ef6424ae649b3eb94c7adfd6256",
+    "corpus_sha256": "dc6065bf87e8ff33f46ee7635a15696b98546b6a06f9fbd1ff5a791be2427add",
+    "platform": "macOS-27.0-arm64-arm-64bit-Mach-O",
+    "runs_per_workload": 30
+  },
+  "stripped_sizes": {
+    "safnari-darwin-amd64": {
+      "baseline_bytes": 16819552,
+      "baseline_sha256": "4ebae021ed4e4e777a52a036c16e70a7fdd3a6b83a2e561fe5cb42c6f2308bc1",
+      "candidate_bytes": 16873984,
+      "candidate_over_baseline": 1.0032362336404679,
+      "candidate_sha256": "a280cdd050f41821160dde581fc1104f01cecf56dc70b07bcbeeb90b67c7b929"
+    },
+    "safnari-darwin-arm64": {
+      "baseline_bytes": 15749522,
+      "baseline_sha256": "520f29c0c3a73f6554dbff8a960a30d1ce52a70ee2528e3b3fb075e43c4651e1",
+      "candidate_bytes": 15796290,
+      "candidate_over_baseline": 1.002969486946969,
+      "candidate_sha256": "e6f4acb24b6e6d443f8af9899f71a0e81e842ef6424ae649b3eb94c7adfd6256"
+    },
+    "safnari-linux-amd64": {
+      "baseline_bytes": 16347298,
+      "baseline_sha256": "f966e8a06a97c22e4cb637276bfd0d40e7756df089f47ac5b490a24a08c98077",
+      "candidate_bytes": 16400544,
+      "candidate_over_baseline": 1.0032571743660634,
+      "candidate_sha256": "cb049520293c9b1036c459d3dd7a36c2e43d0d44c71b4caab77ba1857701aa07"
+    },
+    "safnari-linux-arm64": {
+      "baseline_bytes": 15204514,
+      "baseline_sha256": "fbce133d11d038e299c9ca259be95aa65577a0add7e1f2ea0c3c6c053c886b2f",
+      "candidate_bytes": 15270048,
+      "candidate_over_baseline": 1.00431016736214,
+      "candidate_sha256": "c464870022c413592469c3b6a6a0ad6ca8dea930bf72f6ee038bc8f010b3fc67"
+    },
+    "safnari-windows-amd64.exe": {
+      "baseline_bytes": 16876544,
+      "baseline_sha256": "f342c27f840b4e72710989f60622abfd9a1feb69b09346f2fcfc8c8bcc8d93cf",
+      "candidate_bytes": 16880640,
+      "candidate_over_baseline": 1.0002427037194346,
+      "candidate_sha256": "885282840ff443701d73ea477109beece0fdead561611c4aefb264cad4344518"
+    }
+  },
+  "validation_boundary": "Local macOS ARM64; cross-compilation only for non-native targets. Controlled release runner and native Linux/Windows checks not included."
+}
