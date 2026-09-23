@@ -354,6 +354,28 @@ records a **2.473x** four-workload geometric-mean speedup. Process p95 ratios we
 other targets shrank by at least 38.2%. The full native, security, build, and SBOM PR matrix
 passed on that head.
 
+## Go 1.27.1 toolchain update
+
+The local Go 1.27.1 candidate uses the stable `encoding/json/v2` package without the former
+experiment setting or alternate JSON build. Against the same `main` source built with Go 1.26.8,
+nine warm-cache benchmark samples per workload measured throughput ratios of 0.979x for small
+files, 0.961x for mixed heavy-tail files, 0.987x for sensitive-dense text, and 1.002x for
+duplicate logs. The four-workload geometric mean was 0.982x. All individual median slowdowns
+remained below 5%; the toolchain change does not claim a speed gain.
+
+Thirty paired process runs per workload retained matching file evidence across six workloads.
+The worst p95 latency ratio was 1.030x and the worst peak-RSS ratio was 1.035x, within the
+incremental limits. All five stripped release targets cross-compiled. The macOS ARM64 binary
+was 15,796,290 bytes, below 16 MiB and 0.3% larger than the Go 1.26.8 build. `make lint`,
+`make test`, macOS scanner/output/config race tests, and local `govulncheck` passed. The raw
+samples, process evidence, binary hashes, and source-patch digest are in
+`artifacts/bench/go127-upgrade-20260923/`.
+
+These are local warm-cache and cross-compilation results, not the controlled release gate or
+native Linux/Windows runtime evidence. The frozen-source speed, tail, and size gates must be
+rerun on the exact PR head before replacing the pilot binary. Go 1.27 also raises the minimum
+supported macOS version to 13 Ventura.
+
 ## Validation and unresolved gates
 
 `make lint`, `make test`, macOS scanner/output/config race tests, local `govulncheck`, and all

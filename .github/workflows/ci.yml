@@ -22,8 +22,6 @@ jobs:
       - name: Run govulncheck
         run: |
           go install golang.org/x/vuln/cmd/govulncheck@latest
-          # govulncheck panics with GOEXPERIMENT=jsonv2 as of current toolchain.
-          # Run without jsonv2 tags to keep vulnerability scanning functional.
           govulncheck ./...
         working-directory: src
 
@@ -48,12 +46,12 @@ jobs:
           go-version-file: src/go.mod
           cache-dependency-path: src/go.sum
       - name: Native tests
-        run: GOEXPERIMENT=jsonv2 go test -tags jsonv2 ./...
+        run: go test ./...
         working-directory: src
         shell: bash
       - name: Scanner and delivery race tests
         if: matrix.race
-        run: GOEXPERIMENT=jsonv2 go test -race -tags jsonv2 ./scanner ./output ./config
+        run: go test -race ./scanner ./output ./config
         working-directory: src
         shell: bash
 

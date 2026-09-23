@@ -26,7 +26,8 @@ documentation is to provide deeper explanations and examples than the top level 
 
 ## Building
 
-Safnari is written in Go. Building from source requires a recent Go toolchain and GNU Make.
+Safnari is written in Go. Building from source requires Go 1.27.1 or later and GNU Make.
+Go 1.27-built macOS binaries require macOS 13 Ventura or later.
 
 ```sh
 git clone https://github.com/ProvisioInsights/Safnari.git
@@ -34,8 +35,8 @@ cd Safnari
 make build
 ```
 
-The resulting binary is placed in the `bin` directory. Safnari enables the experimental JSON v2
-encoder by default for better throughput.
+The resulting binary is placed in the `bin` directory. Safnari uses Go's standard JSON-v2
+encoder; no experimental build setting or JSON build tag is required.
 For the five stripped release binaries and matching diagnostic builds, run
 `make build-release-all VERSION=<tag>`.
 

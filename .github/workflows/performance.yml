@@ -22,7 +22,7 @@ jobs:
           cache-dependency-path: src/go.sum
 
       - name: Verify parity fixtures
-        run: GOEXPERIMENT=jsonv2 go test -tags jsonv2 ./scanner -run TestV3OutputNDJSONDeterministicAcrossProfiles -count=1
+        run: go test ./scanner -run TestV3OutputNDJSONDeterministicAcrossProfiles -count=1
         working-directory: src
         shell: bash
 
@@ -116,7 +116,7 @@ jobs:
           cache-dependency-path: src/go.sum
 
       - name: Verify parity fixtures
-        run: GOEXPERIMENT=jsonv2 go test -tags jsonv2 ./scanner -run TestV3OutputNDJSONDeterministicAcrossProfiles -count=1
+        run: go test ./scanner -run TestV3OutputNDJSONDeterministicAcrossProfiles -count=1
         working-directory: src
         shell: bash
 

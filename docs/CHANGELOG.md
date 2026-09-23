@@ -19,8 +19,10 @@ See [migration-v3.md](migration-v3.md) for configuration, spool, and rollback st
 - The streaming scan reuses file information and buffers, reads directories in bounded batches,
   and selects exact-search counting based on the term set and observed match density.
 - Diagnostics use `log/slog` on stderr and progress uses periodic counters.
-- The standard build uses JSON-v2 and retains OTEL/HTTP.
-- Release builds use Go 1.26.8 with gRPC 1.83.2 and updated x/net and OTEL SDK dependencies.
+- The standard build uses stable JSON-v2 and retains OTEL/HTTP. The experimental build switch
+  and alternate JSON encoder have been removed.
+- Release builds require Go 1.27.1 with gRPC 1.83.2 and updated x/net and OTEL SDK dependencies.
+- macOS release binaries require macOS 13 Ventura or later under Go 1.27.
 
 ### Fixed
 
@@ -42,3 +44,7 @@ at equivalent coverage. Its 90 paired process runs per workload passed the p95 a
 all five size targets passed. The earlier 30-run small-file p95 failure remains recorded in
 [release-gates-v3.md](release-gates-v3.md). Crash-cutpoint, delivery-overhead, and managed-device
 pilot requirements remain before general availability.
+
+The Go 1.27.1 toolchain update passed local tests, race checks, cross-builds, size, and paired
+warm-cache regression checks. Its four-workload throughput ratio against Go 1.26.8 was 0.982x;
+controlled release validation and native Linux/Windows checks remain pending for this update.

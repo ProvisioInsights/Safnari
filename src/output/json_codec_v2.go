@@ -1,5 +1,3 @@
-//go:build jsonv2
-
 package output
 
 import (
